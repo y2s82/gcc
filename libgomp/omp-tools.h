@@ -24,7 +24,7 @@
    <http://www.gnu.org/licenses/>.  */
 
 /* This file contains prototypes of functions and data types defined 
-   in ompt and ompd standard */
+   in the OMPD standard */
 
 #ifndef _OMP_TOOLS_H
 #define _OMP_TOOLS_H
@@ -36,7 +36,7 @@ extern "C" {
 # define __GOMPD_NOTHROW __attribute__((__nothrow__))
 #endif
 
-typedef uint64_t ompt_wait_id_t;
+typedef uint64_t ompd_wait_id_t;
 
 typedef struct ompd_address_t {
   ompd_seg_t segment;
@@ -237,7 +237,7 @@ ompd_enumerate_states (ompd_address_space_handle_t *address_space_handle,
                       const char **next_state_name, ompd_word_t *more_enums) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_state (ompd_thread_handle_t *thread_handle,
-                         ompd_word_t *state, ompt_wait_id_t *wait_id) __GOMPD_NOTHROW;
+                         ompd_word_t *state, ompd_wait_id_t *wait_id) __GOMPD_NOTHROW;
 
 ompd_rc_t
 ompd_get_display_control_vars (ompd_address_space_handle_t *address_space_handle,
@@ -260,14 +260,6 @@ ompd_rc_t ompd_get_icv_string_from_scope (void *handle, ompd_scope_t scope,
 ompd_rc_t ompd_get_tool_data (void *handle, ompd_scope_t scope,
                              ompd_word_t *value, ompd_address_t *ptr) __GOMPD_NOTHROW;
 
-
-#define ompt_id_none 0
-#define ompt_data_none { 0 }
-#define ompt_time_none 0
-#define ompt_hwid_none 0
-#define ompt_addr_none ~0
-#define ompt_mutex_impl_none 0
-#define ompt_wait_id_none 0
 
 #define ompd_segment_none 0
 
