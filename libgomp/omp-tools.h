@@ -24,7 +24,7 @@
    <http://www.gnu.org/licenses/>.  */
 
 /* This file contains prototypes of functions and data types defined 
-   in the OMPD standard */
+   in the OMPD standard.  */
 
 #ifndef _OMP_TOOLS_H
 #define _OMP_TOOLS_H
