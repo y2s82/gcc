@@ -23,7 +23,7 @@
    see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    <http://www.gnu.org/licenses/>.  */
 
-/* This file contains prototypes of functions and data types defined 
+/* This file contains prototypes of functions and data types defined
    in the OMPD standard.  */
 
 #ifndef _OMP_TOOLS_H
@@ -94,12 +94,12 @@ typedef ompd_rc_t (*ompd_callback_memory_read_fn_t)
     ompd_thread_context_t *, const ompd_address_t *,
     ompd_size_t, void *) __GOMPD_NOTHROW;
 
-typedef ompd_rc_t (*ompd_callback_memory_write_fn_t) 
+typedef ompd_rc_t (*ompd_callback_memory_write_fn_t)
     (ompd_address_space_context_t *,
     ompd_thread_context_t *, const ompd_address_t *,
     ompd_size_t, const void *) __GOMPD_NOTHROW;
 
-typedef ompd_rc_t (*ompd_callback_device_host_fn_t) 
+typedef ompd_rc_t (*ompd_callback_device_host_fn_t)
     (ompd_address_space_context_t *, const void *,
     ompd_size_t, ompd_size_t, void *) __GOMPD_NOTHROW;
 
@@ -184,7 +184,7 @@ ompd_rc_t
 ompd_get_curr_parallel_handle (ompd_thread_handle_t *,
                               ompd_parallel_handle_t **) __GOMPD_NOTHROW;
 
-ompd_rc_t ompd_get_enclosing_parallel_handle 
+ompd_rc_t ompd_get_enclosing_parallel_handle
     (ompd_parallel_handle_t *,
     ompd_parallel_handle_t **) __GOMPD_NOTHROW;
 
