@@ -36,7 +36,7 @@ extern "C" {
 # define __GOMPD_NOTHROW __attribute__((__nothrow__))
 #endif
 
-typedef uint64_t ompd_wait_id_t;
+typedef __UINT64_TYPE__ ompd_wait_id_t;
 
 typedef struct ompd_address_t {
   ompd_seg_t segment;
@@ -57,12 +57,12 @@ typedef struct _ompd_aspace_cont ompd_address_space_context_t;
 typedef struct _ompd_thread_cont ompd_thread_context_t;
 
 typedef struct ompd_device_type_sizes_t {
-  uint8_t sizeof_char;
-  uint8_t sizeof_short;
-  uint8_t sizeof_int;
-  uint8_t sizeof_long;
-  uint8_t sizeof_long_long;
-  uint8_t sizeof_pointer;
+  __UINT8_TYPE__ sizeof_char;
+  __UINT8_TYPE__ sizeof_short;
+  __UINT8_TYPE__ sizeof_int;
+  __UINT8_TYPE__ sizeof_long;
+  __UINT8_TYPE__ sizeof_long_long;
+  __UINT8_TYPE__ sizeof_pointer;
 } ompd_device_type_sizes_t;
 
 
