@@ -32,10 +32,8 @@
 #ifdef __cplusplus
 extern "C" {
 # define __GOMPD_NOTHROW throw ()
-# define __GOMPD_DEFAULT_NULL_ALLOCATOR = omp_null_allocator
 #else
 # define __GOMPD_NOTHROW __attribute__((__nothrow__))
-# define __GOMPD_DEFAULT_NULL_ALLOCATOR
 #endif
 
 typedef uint64_t ompt_wait_id_t;
