@@ -75,32 +75,32 @@ typedef ompd_rc_t (*ompd_callback_memory_alloc_fn_t) (ompd_size_t nbytes,
 
 typedef ompd_rc_t (*ompd_callback_memory_free_fn_t) (void *ptr) __GOMPD_NOTHROW;
 
-typedef ompd_rc_t (*ompd_callback_get_thread_context_for_thread_id_fn_t) (
-    ompd_address_space_context_t *address_space_context, ompd_thread_id_t kind,
+typedef ompd_rc_t (*ompd_callback_get_thread_context_for_thread_id_fn_t)
+    (ompd_address_space_context_t *address_space_context, ompd_thread_id_t kind,
     ompd_size_t sizeof_thread_id, const void *thread_id,
     ompd_thread_context_t **thread_context) __GOMPD_NOTHROW;
 
-typedef ompd_rc_t (*ompd_callback_sizeof_fn_t) (
-    ompd_address_space_context_t *address_space_context,
+typedef ompd_rc_t (*ompd_callback_sizeof_fn_t)
+    (ompd_address_space_context_t *address_space_context,
     ompd_device_type_sizes_t *sizes) __GOMPD_NOTHROW;
 
-typedef ompd_rc_t (*ompd_callback_symbol_addr_fn_t) (
-    ompd_address_space_context_t *address_space_context,
+typedef ompd_rc_t (*ompd_callback_symbol_addr_fn_t)
+    (ompd_address_space_context_t *address_space_context,
     ompd_thread_context_t *thread_context, const char *symbol_name,
     ompd_address_t *symbol_addr, const char *file_name) __GOMPD_NOTHROW;
 
-typedef ompd_rc_t (*ompd_callback_memory_read_fn_t) (
-    ompd_address_space_context_t *address_space_context,
+typedef ompd_rc_t (*ompd_callback_memory_read_fn_t)
+    (ompd_address_space_context_t *address_space_context,
     ompd_thread_context_t *thread_context, const ompd_address_t *addr,
     ompd_size_t nbytes, void *buffer) __GOMPD_NOTHROW;
 
-typedef ompd_rc_t (*ompd_callback_memory_write_fn_t) (
-    ompd_address_space_context_t *address_space_context,
+typedef ompd_rc_t (*ompd_callback_memory_write_fn_t) 
+    (ompd_address_space_context_t *address_space_context,
     ompd_thread_context_t *thread_context, const ompd_address_t *addr,
     ompd_size_t nbytes, const void *buffer) __GOMPD_NOTHROW;
 
-typedef ompd_rc_t (*ompd_callback_device_host_fn_t) (
-    ompd_address_space_context_t *address_space_context, const void *input,
+typedef ompd_rc_t (*ompd_callback_device_host_fn_t) 
+    (ompd_address_space_context_t *address_space_context, const void *input,
     ompd_size_t unit_size, ompd_size_t count, void *output) __GOMPD_NOTHROW;
 
 typedef ompd_rc_t (*ompd_callback_print_string_fn_t) (const char *string,
@@ -188,8 +188,8 @@ ompd_rc_t
 ompd_get_curr_parallel_handle (ompd_thread_handle_t *thread_handle,
                               ompd_parallel_handle_t **parallel_handle) __GOMPD_NOTHROW;
 
-ompd_rc_t ompd_get_enclosing_parallel_handle (
-    ompd_parallel_handle_t *parallel_handle,
+ompd_rc_t ompd_get_enclosing_parallel_handle 
+    (ompd_parallel_handle_t *parallel_handle,
     ompd_parallel_handle_t **enclosing_parallel_handle) __GOMPD_NOTHROW;
 
 ompd_rc_t
