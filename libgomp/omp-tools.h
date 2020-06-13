@@ -147,14 +147,15 @@ ompd_rc_t ompd_get_version_string (const char **) __GOMPD_NOTHROW;
 ompd_rc_t ompd_finalize (void) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_process_initialize (ompd_address_space_context_t *,
-				  ompd_address_space_handle_t **) __GOMPD_NOTHROW;
+				ompd_address_space_handle_t **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_device_initialize (ompd_address_space_handle_t *,
 				 ompd_address_space_context_t *,
 				 ompd_device_t, ompd_size_t, void *,
-				 ompd_address_space_handle_t **) __GOMPD_NOTHROW;
+				ompd_address_space_handle_t **) __GOMPD_NOTHROW;
 
-ompd_rc_t ompd_rel_address_space_handle (ompd_address_space_handle_t *) __GOMPD_NOTHROW;
+ompd_rc_t ompd_rel_address_space_handle
+				(ompd_address_space_handle_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_omp_version (ompd_address_space_handle_t *,
 			       ompd_word_t *) __GOMPD_NOTHROW;
@@ -174,7 +175,7 @@ ompd_rc_t ompd_get_thread_handle (ompd_address_space_handle_t *,
 ompd_rc_t ompd_rel_thread_handle (ompd_thread_handle_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_thread_handle_compare (ompd_thread_handle_t *,
-				     ompd_thread_handle_t *, int *) __GOMPD_NOTHROW;
+				ompd_thread_handle_t *, int *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_thread_id (ompd_thread_handle_t *,
 			     ompd_thread_id_t,
@@ -246,7 +247,7 @@ ompd_rc_t ompd_get_icv_from_scope (void *, ompd_scope_t,
 				  ompd_icv_id_t, ompd_word_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_icv_string_from_scope (void *, ompd_scope_t,
-					 ompd_icv_id_t, const char **) __GOMPD_NOTHROW;
+				  ompd_icv_id_t, const char **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_tool_data (void *, ompd_scope_t,
 			     ompd_word_t *, ompd_address_t *) __GOMPD_NOTHROW;
