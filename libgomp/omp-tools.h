@@ -36,7 +36,42 @@ extern "C" {
 # define __GOMPD_NOTHROW __attribute__((__nothrow__))
 #endif
 
+typedef __UINT64_TYPE__ ompd_size_t;
+
 typedef __UINT64_TYPE__ ompd_wait_id_t;
+
+typedef __UINT64_TYPE__ ompd_addr_t;
+typedef __INT64_TYPE__ ompd_word_t;
+typedef __UINT64_TYPE__ ompd_seg_t;
+
+typedef __UINT64_TYPE__ ompd_device_t;
+
+typedef __UINT64_TYPE__ ompd_thread_id_t;
+
+typedef enum ompd_scope_t {
+  ompd_scope_global = 1,
+  ompd_scope_address_space = 2,
+  ompd_scope_thread = 3,
+  ompd_scope_parallel = 4,
+  ompd_scope_implicit_task = 5,
+  ompd_scope_task = 6
+} ompd_scope_t;
+
+typedef __UINT64_TYPE__ ompd_icv_id_t;
+
+typedef enum ompd_rc_t {
+  ompd_rc_ok = 0,
+  ompd_rc_unavailable = 1,
+  ompd_rc_stale_handle = 2,
+  ompd_rc_bad_input = 3,
+  ompd_rc_error = 4,
+  ompd_rc_unsupported = 5,
+  ompd_rc_needs_state_tracking = 6,
+  ompd_rc_incompatible = 7,
+  ompd_rc_device_read_error = 8,
+  ompd_rc_device_write_error = 9,
+  ompd_rc_nomem = 10,
+} ompd_rc_t;
 
 typedef struct ompd_address_t {
   ompd_seg_t segment;
