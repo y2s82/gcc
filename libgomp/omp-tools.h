@@ -71,7 +71,7 @@ const char **ompd_dll_locations;
 void ompd_dll_locations_valid (void) __GOMPD_NOTHROW;
 
 typedef ompd_rc_t (*ompd_callback_memory_alloc_fn_t) (ompd_size_t,
-                                                     void **) __GOMPD_NOTHROW;
+						     void **) __GOMPD_NOTHROW;
 
 typedef ompd_rc_t (*ompd_callback_memory_free_fn_t) (void *) __GOMPD_NOTHROW;
 
@@ -104,7 +104,7 @@ typedef ompd_rc_t (*ompd_callback_device_host_fn_t)
     ompd_size_t, ompd_size_t, void *) __GOMPD_NOTHROW;
 
 typedef ompd_rc_t (*ompd_callback_print_string_fn_t) (const char *,
-                                                     int ) __GOMPD_NOTHROW;
+						     int) __GOMPD_NOTHROW;
 
 typedef struct ompd_callbacks_t {
   ompd_callback_memory_alloc_fn_t alloc_memory;
@@ -138,7 +138,7 @@ void ompd_bp_device_begin (void) __GOMPD_NOTHROW;
 void ompd_bp_device_end (void) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_initialize (ompd_word_t,
-                          const ompd_callbacks_t *) __GOMPD_NOTHROW;
+			  const ompd_callbacks_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_api_version (ompd_word_t *) __GOMPD_NOTHROW;
 
@@ -147,42 +147,42 @@ ompd_rc_t ompd_get_version_string (const char **) __GOMPD_NOTHROW;
 ompd_rc_t ompd_finalize (void) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_process_initialize (ompd_address_space_context_t *,
-                                  ompd_address_space_handle_t **) __GOMPD_NOTHROW;
+				  ompd_address_space_handle_t **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_device_initialize (ompd_address_space_handle_t *,
-                                 ompd_address_space_context_t *,
-                                 ompd_device_t, ompd_size_t, void *,
-                                 ompd_address_space_handle_t **) __GOMPD_NOTHROW;
+				 ompd_address_space_context_t *,
+				 ompd_device_t, ompd_size_t, void *,
+				 ompd_address_space_handle_t **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_rel_address_space_handle (ompd_address_space_handle_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_omp_version (ompd_address_space_handle_t *,
-                               ompd_word_t *) __GOMPD_NOTHROW;
+			       ompd_word_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t
 ompd_get_omp_version_string (ompd_address_space_handle_t *,
-                            const char **) __GOMPD_NOTHROW;
+			    const char **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_thread_in_parallel (ompd_parallel_handle_t *, int,
-                                      ompd_thread_handle_t **) __GOMPD_NOTHROW;
+				      ompd_thread_handle_t **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_thread_handle (ompd_address_space_handle_t *,
-                                 ompd_thread_id_t,
-                                 ompd_size_t, const void *,
-                                 ompd_thread_handle_t **) __GOMPD_NOTHROW;
+				 ompd_thread_id_t,
+				 ompd_size_t, const void *,
+				 ompd_thread_handle_t **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_rel_thread_handle (ompd_thread_handle_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_thread_handle_compare (ompd_thread_handle_t *,
-                                     ompd_thread_handle_t *, int *) __GOMPD_NOTHROW;
+				     ompd_thread_handle_t *, int *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_thread_id (ompd_thread_handle_t *,
-                             ompd_thread_id_t,
-                             ompd_size_t, void *) __GOMPD_NOTHROW;
+			     ompd_thread_id_t,
+			     ompd_size_t, void *) __GOMPD_NOTHROW;
 
 ompd_rc_t
 ompd_get_curr_parallel_handle (ompd_thread_handle_t *,
-                              ompd_parallel_handle_t **) __GOMPD_NOTHROW;
+			      ompd_parallel_handle_t **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_enclosing_parallel_handle
     (ompd_parallel_handle_t *,
@@ -190,66 +190,66 @@ ompd_rc_t ompd_get_enclosing_parallel_handle
 
 ompd_rc_t
 ompd_get_task_parallel_handle (ompd_task_handle_t *,
-                              ompd_parallel_handle_t **) __GOMPD_NOTHROW;
+			      ompd_parallel_handle_t **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_rel_parallel_handle (ompd_parallel_handle_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t
 ompd_parallel_handle_compare (ompd_parallel_handle_t *,
-                             ompd_parallel_handle_t *, int *) __GOMPD_NOTHROW;
+			     ompd_parallel_handle_t *, int *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_curr_task_handle (ompd_thread_handle_t *,
-                                    ompd_task_handle_t **) __GOMPD_NOTHROW;
+				    ompd_task_handle_t **) __GOMPD_NOTHROW;
 
 ompd_rc_t
 ompd_get_generating_task_handle (ompd_task_handle_t *,
-                                ompd_task_handle_t **) __GOMPD_NOTHROW;
+				ompd_task_handle_t **) __GOMPD_NOTHROW;
 
 ompd_rc_t
 ompd_get_scheduling_task_handle (ompd_task_handle_t *,
-                                ompd_task_handle_t **) __GOMPD_NOTHROW;
+				ompd_task_handle_t **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_task_in_parallel (ompd_parallel_handle_t *, int,
-                                    ompd_task_handle_t **) __GOMPD_NOTHROW;
+				    ompd_task_handle_t **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_rel_task_handle (ompd_task_handle_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_task_handle_compare (ompd_task_handle_t *,
-                                   ompd_task_handle_t *, int *) __GOMPD_NOTHROW;
+				   ompd_task_handle_t *, int *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_task_function (ompd_task_handle_t *,
-                                 ompd_address_t *) __GOMPD_NOTHROW;
+				 ompd_address_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_task_frame (ompd_task_handle_t *,
-                              ompd_frame_info_t *,
-                              ompd_frame_info_t *) __GOMPD_NOTHROW;
+			      ompd_frame_info_t *,
+			      ompd_frame_info_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t
 ompd_enumerate_states (ompd_address_space_handle_t *,
-                      ompd_word_t, ompd_word_t *,
-                      const char **, ompd_word_t *) __GOMPD_NOTHROW;
+		      ompd_word_t, ompd_word_t *,
+		      const char **, ompd_word_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_state (ompd_thread_handle_t *,
-                         ompd_word_t *, ompd_wait_id_t *) __GOMPD_NOTHROW;
+			 ompd_word_t *, ompd_wait_id_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t
 ompd_get_display_control_vars (ompd_address_space_handle_t *,
-                              const char *const **) __GOMPD_NOTHROW;
+			      const char *const **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_rel_display_control_vars (const char *const **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_enumerate_icvs (ompd_address_space_handle_t *,
-                              ompd_icv_id_t, ompd_icv_id_t *, const char **,
-                              ompd_scope_t *, int *) __GOMPD_NOTHROW;
+			      ompd_icv_id_t, ompd_icv_id_t *, const char **,
+			      ompd_scope_t *, int *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_icv_from_scope (void *, ompd_scope_t,
-                                  ompd_icv_id_t, ompd_word_t *) __GOMPD_NOTHROW;
+				  ompd_icv_id_t, ompd_word_t *) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_icv_string_from_scope (void *, ompd_scope_t,
-                                         ompd_icv_id_t, const char **) __GOMPD_NOTHROW;
+					 ompd_icv_id_t, const char **) __GOMPD_NOTHROW;
 
 ompd_rc_t ompd_get_tool_data (void *, ompd_scope_t,
-                             ompd_word_t *, ompd_address_t *) __GOMPD_NOTHROW;
+			     ompd_word_t *, ompd_address_t *) __GOMPD_NOTHROW;
 
 
 #define ompd_segment_none 0
