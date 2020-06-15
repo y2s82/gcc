@@ -130,6 +130,7 @@ package Rtsfind is
       --  Children of Ada.Strings.Text_Output
 
       Ada_Strings_Text_Output_Utils,
+      Ada_Strings_Text_Output_Buffers,
 
       --  Children of Ada.Text_IO (for Check_Text_IO_Special_Unit)
 
@@ -173,6 +174,7 @@ package Rtsfind is
       --  Children of System
 
       System_Address_Image,
+      System_Address_To_Access_Conversions,
       System_Arith_64,
       System_AST_Handling,
       System_Assertions,
@@ -490,6 +492,11 @@ package Rtsfind is
 
      RE_Put_UTF_8,                       -- Ada.Strings.Text_Output.Utils
      RE_Put_Wide_Wide_String,            -- Ada.Strings.Text_Output.Utils
+
+     RE_Buffer,                          -- Ada.Strings.Text_Output.Buffers
+     RE_New_Buffer,                      -- Ada.Strings.Text_Output.Buffers
+     RE_Destroy,                         -- Ada.Strings.Text_Output.Buffers
+     RE_Get,                             -- Ada.Strings.Text_Output.Buffers
 
      RE_Wait_For_Release,                -- Ada.Synchronous_Barriers
 
@@ -1178,6 +1185,8 @@ package Rtsfind is
      RE_Put_Image_Long_Long_Unsigned,    -- System.Put_Images
      RE_Put_Image_Thin_Pointer,          -- System.Put_Images
      RE_Put_Image_Fat_Pointer,           -- System.Put_Images
+     RE_Put_Image_Access_Subp,           -- System.Put_Images
+     RE_Put_Image_Access_Prot_Subp,      -- System.Put_Images
      RE_Put_Image_String,                -- System.Put_Images
      RE_Put_Image_Wide_String,           -- System.Put_Images
      RE_Put_Image_Wide_Wide_String,      -- System.Put_Images
@@ -1376,6 +1385,7 @@ package Rtsfind is
      RE_I_C,                             -- System.Stream_Attributes
      RE_I_F,                             -- System.Stream_Attributes
      RE_I_I,                             -- System.Stream_Attributes
+     RE_I_I24,                           -- System.Stream_Attributes
      RE_I_LF,                            -- System.Stream_Attributes
      RE_I_LI,                            -- System.Stream_Attributes
      RE_I_LLF,                           -- System.Stream_Attributes
@@ -1388,6 +1398,7 @@ package Rtsfind is
      RE_I_SSU,                           -- System.Stream_Attributes
      RE_I_SU,                            -- System.Stream_Attributes
      RE_I_U,                             -- System.Stream_Attributes
+     RE_I_U24,                           -- System.Stream_Attributes
      RE_I_WC,                            -- System.Stream_Attributes
      RE_I_WWC,                           -- System.Stream_Attributes
 
@@ -1397,6 +1408,7 @@ package Rtsfind is
      RE_W_C,                             -- System.Stream_Attributes
      RE_W_F,                             -- System.Stream_Attributes
      RE_W_I,                             -- System.Stream_Attributes
+     RE_W_I24,                           -- System.Stream_Attributes
      RE_W_LF,                            -- System.Stream_Attributes
      RE_W_LI,                            -- System.Stream_Attributes
      RE_W_LLF,                           -- System.Stream_Attributes
@@ -1409,6 +1421,7 @@ package Rtsfind is
      RE_W_SSU,                           -- System.Stream_Attributes
      RE_W_SU,                            -- System.Stream_Attributes
      RE_W_U,                             -- System.Stream_Attributes
+     RE_W_U24,                           -- System.Stream_Attributes
      RE_W_WC,                            -- System.Stream_Attributes
      RE_W_WWC,                           -- System.Stream_Attributes
 
@@ -1763,6 +1776,11 @@ package Rtsfind is
 
      RE_Put_UTF_8                        => Ada_Strings_Text_Output_Utils,
      RE_Put_Wide_Wide_String             => Ada_Strings_Text_Output_Utils,
+
+     RE_Buffer                           => Ada_Strings_Text_Output_Buffers,
+     RE_New_Buffer                       => Ada_Strings_Text_Output_Buffers,
+     RE_Destroy                          => Ada_Strings_Text_Output_Buffers,
+     RE_Get                              => Ada_Strings_Text_Output_Buffers,
 
      RE_Wait_For_Release                 => Ada_Synchronous_Barriers,
 
@@ -2575,6 +2593,8 @@ package Rtsfind is
      RE_Put_Image_Long_Long_Unsigned     => System_Put_Images,
      RE_Put_Image_Thin_Pointer           => System_Put_Images,
      RE_Put_Image_Fat_Pointer            => System_Put_Images,
+     RE_Put_Image_Access_Subp            => System_Put_Images,
+     RE_Put_Image_Access_Prot_Subp       => System_Put_Images,
      RE_Put_Image_String                 => System_Put_Images,
      RE_Put_Image_Wide_String            => System_Put_Images,
      RE_Put_Image_Wide_Wide_String       => System_Put_Images,
@@ -2653,6 +2673,7 @@ package Rtsfind is
      RE_I_C                              => System_Stream_Attributes,
      RE_I_F                              => System_Stream_Attributes,
      RE_I_I                              => System_Stream_Attributes,
+     RE_I_I24                            => System_Stream_Attributes,
      RE_I_LF                             => System_Stream_Attributes,
      RE_I_LI                             => System_Stream_Attributes,
      RE_I_LLF                            => System_Stream_Attributes,
@@ -2665,6 +2686,7 @@ package Rtsfind is
      RE_I_SSU                            => System_Stream_Attributes,
      RE_I_SU                             => System_Stream_Attributes,
      RE_I_U                              => System_Stream_Attributes,
+     RE_I_U24                            => System_Stream_Attributes,
      RE_I_WC                             => System_Stream_Attributes,
      RE_I_WWC                            => System_Stream_Attributes,
 
@@ -2674,6 +2696,7 @@ package Rtsfind is
      RE_W_C                              => System_Stream_Attributes,
      RE_W_F                              => System_Stream_Attributes,
      RE_W_I                              => System_Stream_Attributes,
+     RE_W_I24                            => System_Stream_Attributes,
      RE_W_LF                             => System_Stream_Attributes,
      RE_W_LI                             => System_Stream_Attributes,
      RE_W_LLF                            => System_Stream_Attributes,
@@ -2686,6 +2709,7 @@ package Rtsfind is
      RE_W_SSU                            => System_Stream_Attributes,
      RE_W_SU                             => System_Stream_Attributes,
      RE_W_U                              => System_Stream_Attributes,
+     RE_W_U24                            => System_Stream_Attributes,
      RE_W_WC                             => System_Stream_Attributes,
      RE_W_WWC                            => System_Stream_Attributes,
 

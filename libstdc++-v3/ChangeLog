@@ -1,3 +1,31 @@
+2020-06-12  Jonathan Wakely  <jwakely@redhat.com>
+
+	* testsuite/29_atomics/atomic_flag/clear/1.cc: Also test clear()
+	when the value is currently set.
+	* testsuite/29_atomics/atomic_flag/test_and_set/explicit.cc:
+	Actually check the return value.
+	* testsuite/29_atomics/atomic_flag/test_and_set/implicit.cc:
+	Likewise.
+
+2020-06-12  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/bits/atomic_base.h (atomic_flag::test): Add missing
+	const qualifiers.
+	* testsuite/29_atomics/atomic_flag/test/explicit.cc: Add
+	dg-options and verify results of test function.
+	* testsuite/29_atomics/atomic_flag/test/implicit.cc: Likewise.
+
+2020-06-11  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/94749
+	* include/bits/istream.tcc (basic_istream::ignore(streamsize, CharT)):
+	Only discard an extra character if we didn't already reach the
+	maximum number.
+	* src/c++98/istream.cc (istream::ignore(streamsiz, char))
+	(wistream::ignore(streamsize, wchar_t)): Likewise.
+	* testsuite/27_io/basic_istream/ignore/char/94749.cc: New test.
+	* testsuite/27_io/basic_istream/ignore/wchar_t/94749.cc: New test.
+
 2020-06-10  Patrick Palka  <ppalka@redhat.com>
 
 	PR libstdc++/95578

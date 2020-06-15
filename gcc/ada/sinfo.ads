@@ -1029,7 +1029,7 @@ package Sinfo is
    --    Present in N_Raise_Expression nodes that appear in the body of the
    --    special predicateM function used to test a predicate in the context
    --    of a membership test, where raise expression results in returning a
-   --    value of False rather than raising an exception.
+   --    value of False rather than raising an exception.???obsolete flag
 
    --  Corresponding_Aspect (Node3-Sem)
    --    Present in N_Pragma node. Used to point back to the source aspect from
@@ -1848,6 +1848,10 @@ package Sinfo is
    --    the exponentiation and the multiply/divide node. If this set of
    --    conditions holds, and the flag is set, then the division or
    --    multiplication can be (and is) converted to a shift.
+
+   --  Is_Preelaborable_Call (Flag7-Sem)
+   --    Present in call marker nodes. Set when the related call is non-static
+   --    but preelaborable.
 
    --  Is_Prefixed_Call (Flag17-Sem)
    --    This flag is set in a selected component within a generic unit, if
@@ -7830,6 +7834,7 @@ package Sinfo is
       --  Is_Source_Call (Flag4-Sem)
       --  Is_Declaration_Level_Node (Flag5-Sem)
       --  Is_Dispatching_Call (Flag6-Sem)
+      --  Is_Preelaborable_Call (Flag7-Sem)
       --  Is_Known_Guaranteed_ABE (Flag18-Sem)
 
       ------------------------
@@ -9767,6 +9772,9 @@ package Sinfo is
    function Is_Power_Of_2_For_Shift
      (N : Node_Id) return Boolean;    -- Flag13
 
+   function Is_Preelaborable_Call
+     (N : Node_Id) return Boolean;    -- Flag7
+
    function Is_Prefixed_Call
      (N : Node_Id) return Boolean;    -- Flag17
 
@@ -10869,6 +10877,9 @@ package Sinfo is
 
    procedure Set_Is_Power_Of_2_For_Shift
      (N : Node_Id; Val : Boolean := True);    -- Flag13
+
+   procedure Set_Is_Preelaborable_Call
+     (N : Node_Id; Val : Boolean := True);    -- Flag7
 
    procedure Set_Is_Prefixed_Call
      (N : Node_Id; Val : Boolean := True);    -- Flag17
@@ -13395,6 +13406,7 @@ package Sinfo is
    pragma Inline (Is_Null_Loop);
    pragma Inline (Is_Overloaded);
    pragma Inline (Is_Power_Of_2_For_Shift);
+   pragma Inline (Is_Preelaborable_Call);
    pragma Inline (Is_Prefixed_Call);
    pragma Inline (Is_Protected_Subprogram_Body);
    pragma Inline (Is_Qualified_Universal_Literal);
@@ -13758,6 +13770,7 @@ package Sinfo is
    pragma Inline (Set_Is_Null_Loop);
    pragma Inline (Set_Is_Overloaded);
    pragma Inline (Set_Is_Power_Of_2_For_Shift);
+   pragma Inline (Set_Is_Preelaborable_Call);
    pragma Inline (Set_Is_Prefixed_Call);
    pragma Inline (Set_Is_Protected_Subprogram_Body);
    pragma Inline (Set_Is_Qualified_Universal_Literal);

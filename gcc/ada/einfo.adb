@@ -1299,7 +1299,7 @@ package body Einfo is
 
    function Contract_Wrapper (Id : E) return E is
    begin
-      pragma Assert (Ekind_In (Id, E_Entry, E_Entry_Family));
+      pragma Assert (Is_Entry (Id));
       return Node25 (Id);
    end Contract_Wrapper;
 
@@ -1709,8 +1709,7 @@ package body Einfo is
    function Has_Out_Or_In_Out_Parameter (Id : E) return B is
    begin
       pragma Assert
-        (Ekind_In (Id, E_Entry, E_Entry_Family)
-          or else Is_Subprogram_Or_Generic_Subprogram (Id));
+        (Is_Entry (Id) or else Is_Subprogram_Or_Generic_Subprogram (Id));
       return Flag110 (Id);
    end Has_Out_Or_In_Out_Parameter;
 
@@ -4159,7 +4158,7 @@ package body Einfo is
 
    procedure Set_Contract_Wrapper (Id : E; V : E) is
    begin
-      pragma Assert (Ekind_In (Id, E_Entry, E_Entry_Family));
+      pragma Assert (Is_Entry (Id));
       Set_Node25 (Id, V);
    end Set_Contract_Wrapper;
 
@@ -6180,8 +6179,7 @@ package body Einfo is
 
    procedure Set_No_Return (Id : E; V : B := True) is
    begin
-      pragma Assert
-        (V = False or else Ekind_In (Id, E_Procedure, E_Generic_Procedure));
+      pragma Assert (Is_Subprogram (Id) or else Is_Generic_Subprogram (Id));
       Set_Flag113 (Id, V);
    end Set_No_Return;
 
@@ -8251,6 +8249,21 @@ package body Einfo is
           and then Is_Protected_Type (Corresponding_Concurrent_Type (Id));
    end Is_Protected_Record_Type;
 
+   -------------------------------------
+   -- Is_Relaxed_Initialization_State --
+   -------------------------------------
+
+   function Is_Relaxed_Initialization_State (Id : E) return B is
+   begin
+      --  To qualify, the abstract state must appear with simple option
+      --  "Relaxed_Initialization" (??? add reference to SPARK RM once the
+      --  Relaxed_Initialization aspect is described there).
+
+      return
+        Ekind (Id) = E_Abstract_State
+          and then Has_Option (Id, Name_Relaxed_Initialization);
+   end Is_Relaxed_Initialization_State;
+
    --------------------------------
    -- Is_Standard_Character_Type --
    --------------------------------
@@ -10172,7 +10185,9 @@ package body Einfo is
          when E_Abstract_State =>
             Write_Str ("Refinement_Constituents");
 
-         when E_Return_Statement =>
+         when E_Block
+            | E_Return_Statement
+         =>
             Write_Str ("Return_Applies_To");
 
          when others =>

@@ -51,7 +51,6 @@ with Nmake;     use Nmake;
 with Opt;       use Opt;
 with Output;    use Output;
 with Restrict;  use Restrict;
-with Rident;    use Rident;
 with Rtsfind;   use Rtsfind;
 with Sem;       use Sem;
 with Sem_Aux;   use Sem_Aux;
@@ -676,6 +675,10 @@ package body Sem_Ch6 is
       R_Type : constant Entity_Id := Etype (Scope_Id);
       --  Function result subtype
 
+      procedure Check_No_Return_Expression (Return_Expr : Node_Id);
+      --  Ada 2020: Check that the return expression in a No_Return function
+      --  meets the conditions specified by RM 6.5.1(5.1/5).
+
       procedure Check_Return_Construct_Accessibility (Return_Stmt : Node_Id);
       --  Apply legality rule of 6.5 (5.9) to the access discriminants of an
       --  aggregate in a return statement.
@@ -683,6 +686,34 @@ package body Sem_Ch6 is
       procedure Check_Return_Subtype_Indication (Obj_Decl : Node_Id);
       --  Check that the return_subtype_indication properly matches the result
       --  subtype of the function, as required by RM-6.5(5.1/2-5.3/2).
+
+      --------------------------------
+      -- Check_No_Return_Expression --
+      --------------------------------
+
+      procedure Check_No_Return_Expression (Return_Expr : Node_Id) is
+         Kind : constant Node_Kind := Nkind (Return_Expr);
+
+      begin
+         if Kind = N_Raise_Expression then
+            return;
+
+         elsif Kind = N_Function_Call
+           and then Is_Entity_Name (Name (Return_Expr))
+           and then Ekind_In (Entity (Name (Return_Expr)), E_Function,
+                                                           E_Generic_Function)
+           and then No_Return (Entity (Name (Return_Expr)))
+         then
+            return;
+         end if;
+
+         Error_Msg_N
+           ("illegal expression in RETURN statement of No_Return function",
+            Return_Expr);
+         Error_Msg_N
+           ("\must be raise expression or call to No_Return (RM 6.5.1(5.1/5))",
+            Return_Expr);
+      end Check_No_Return_Expression;
 
       ------------------------------------------
       -- Check_Return_Construct_Accessibility --
@@ -1101,6 +1132,19 @@ package body Sem_Ch6 is
             Check_Limited_Return (N, Expr, R_Type);
 
             Check_Return_Construct_Accessibility (N);
+
+            --  Ada 2020 (AI12-0269): Any return statement that applies to a
+            --  nonreturning function shall be a simple_return_statement with
+            --  an expression that is a raise_expression, or else a call on a
+            --  nonreturning function, or else a parenthesized expression of
+            --  one of these.
+
+            if Ada_Version >= Ada_2020
+              and then No_Return (Scope_Id)
+              and then Comes_From_Source (N)
+            then
+               Check_No_Return_Expression (Original_Node (Expr));
+            end if;
          end if;
       else
          Obj_Decl := Last (Return_Object_Declarations (N));
@@ -1162,6 +1206,18 @@ package body Sem_Ch6 is
                     ("aliased only allowed for limited return objects", N);
                end if;
             end if;
+
+            --  Ada 2020 (AI12-0269): Any return statement that applies to a
+            --  nonreturning function shall be a simple_return_statement.
+
+            if Ada_Version >= Ada_2020
+              and then No_Return (Scope_Id)
+              and then Comes_From_Source (N)
+            then
+               Error_Msg_N
+                 ("extended RETURN statement not allowed in No_Return "
+                  & "function", N);
+            end if;
          end;
       end if;
 
@@ -1194,20 +1250,31 @@ package body Sem_Ch6 is
 
          --  The return value is converted to the return type of the function,
          --  which implies a predicate check if the return type is predicated.
+         --  We do not apply the check for an extended return statement because
+         --  Analyze_Object_Declaration has already done it on Obj_Decl above.
          --  We do not apply the check to a case expression because it will
          --  be expanded into a series of return statements, each of which
          --  will receive a predicate check.
 
-         if Nkind (Expr) /= N_Case_Expression then
+         if Nkind (N) /= N_Extended_Return_Statement
+           and then Nkind (Expr) /= N_Case_Expression
+         then
             Apply_Predicate_Check (Expr, R_Type);
          end if;
 
          --  Ada 2005 (AI-318-02): When the result type is an anonymous access
          --  type, apply an implicit conversion of the expression to that type
          --  to force appropriate static and run-time accessibility checks.
+         --  But we want to apply the checks to an extended return statement
+         --  only once, i.e. not to the simple return statement generated at
+         --  the end of its expansion because, prior to leaving the function,
+         --  the accessibility level of the return object changes to be a level
+         --  determined by the point of call (RM 3.10.2(10.8/3).
 
          if Ada_Version >= Ada_2005
            and then Ekind (R_Type) = E_Anonymous_Access_Type
+           and then (Nkind (N) = N_Extended_Return_Statement
+                     or else not Comes_From_Extended_Return_Statement (N))
          then
             Rewrite (Expr, Convert_To (R_Type, Relocate_Node (Expr)));
             Analyze_And_Resolve (Expr, R_Type);
@@ -2091,8 +2158,12 @@ package body Sem_Ch6 is
       --  Check that pragma No_Return is obeyed. Don't complain about the
       --  implicitly-generated return that is placed at the end.
 
-      if No_Return (Scope_Id) and then Comes_From_Source (N) then
-         Error_Msg_N ("RETURN statement not allowed (No_Return)", N);
+      if No_Return (Scope_Id)
+        and then Ekind_In (Kind, E_Procedure, E_Generic_Procedure)
+        and then Comes_From_Source (N)
+      then
+         Error_Msg_N
+           ("RETURN statement not allowed in No_Return procedure", N);
       end if;
 
       --  Warn on any unassigned OUT parameters if in procedure
@@ -2103,17 +2174,17 @@ package body Sem_Ch6 is
 
       --  Check that functions return objects, and other things do not
 
-      if Kind = E_Function or else Kind = E_Generic_Function then
+      if Ekind_In (Kind, E_Function, E_Generic_Function) then
          if not Returns_Object then
             Error_Msg_N ("missing expression in return from function", N);
          end if;
 
-      elsif Kind = E_Procedure or else Kind = E_Generic_Procedure then
+      elsif Ekind_In (Kind, E_Procedure, E_Generic_Procedure) then
          if Returns_Object then
             Error_Msg_N ("procedure cannot return value (use function)", N);
          end if;
 
-      elsif Kind = E_Entry or else Kind = E_Entry_Family then
+      elsif Ekind_In (Kind, E_Entry, E_Entry_Family) then
          if Returns_Object then
             if Is_Protected_Type (Scope (Scope_Id)) then
                Error_Msg_N ("entry body cannot return value", N);
@@ -2443,6 +2514,15 @@ package body Sem_Ch6 is
       --  because it is specified directly on the body, or because it is
       --  inherited from the enclosing subprogram or package.
 
+      function Build_Internal_Protected_Declaration
+        (N : Node_Id) return Entity_Id;
+      --  A subprogram body without a previous spec that appears in a protected
+      --  body must be expanded separately to create a subprogram declaration
+      --  for it, in order to resolve internal calls to it from other protected
+      --  operations.
+      --
+      --  Possibly factor this with Exp_Dist.Copy_Specification ???
+
       procedure Build_Subprogram_Declaration;
       --  Create a matching subprogram declaration for subprogram body N
 
@@ -2490,6 +2570,12 @@ package body Sem_Ch6 is
       --  completion and Spec_Id the defining entity of its spec. Mark all
       --  the not-yet-frozen types referenced by the simple return statement
       --  of the function as formally frozen.
+
+      procedure Move_Pragmas (From : Node_Id; To : Node_Id);
+      --  Find all suitable source pragmas at the top of subprogram body
+      --  From's declarations and move them after arbitrary node To.
+      --  One exception is pragma SPARK_Mode which is copied rather than moved,
+      --  as it applies to the body too.
 
       procedure Restore_Limited_Views (Restore_List : Elist_Id);
       --  Undo the transformation done by Exchange_Limited_Views.
@@ -2603,67 +2689,128 @@ package body Sem_Ch6 is
          return SPARK_Mode = On;
       end Body_Has_SPARK_Mode_On;
 
+      ------------------------------------------
+      -- Build_Internal_Protected_Declaration --
+      ------------------------------------------
+
+      function Build_Internal_Protected_Declaration
+        (N : Node_Id) return Entity_Id
+      is
+         procedure Analyze_Pragmas (From : Node_Id);
+         --  Analyze all pragmas which follow arbitrary node From
+
+         ---------------------
+         -- Analyze_Pragmas --
+         ---------------------
+
+         procedure Analyze_Pragmas (From : Node_Id) is
+            Decl : Node_Id;
+
+         begin
+            Decl := Next (From);
+            while Present (Decl) loop
+               if Nkind (Decl) = N_Pragma then
+                  Analyze_Pragma (Decl);
+
+               --  No candidate pragmas are available for analysis
+
+               else
+                  exit;
+               end if;
+
+               Next (Decl);
+            end loop;
+         end Analyze_Pragmas;
+
+         --  Local variables
+
+         Body_Id  : constant Entity_Id  := Defining_Entity (N);
+         Loc      : constant Source_Ptr := Sloc (N);
+         Decl     : Node_Id;
+         Formal   : Entity_Id;
+         Formals  : List_Id;
+         Spec     : Node_Id;
+         Spec_Id  : Entity_Id;
+
+      --  Start of processing for Build_Internal_Protected_Declaration
+
+      begin
+         Formal := First_Formal (Body_Id);
+
+         --  The protected operation always has at least one formal, namely the
+         --  object itself, but it is only placed in the parameter list if
+         --  expansion is enabled.
+
+         if Present (Formal) or else Expander_Active then
+            Formals := Copy_Parameter_List (Body_Id);
+         else
+            Formals := No_List;
+         end if;
+
+         Spec_Id :=
+           Make_Defining_Identifier (Sloc (Body_Id),
+             Chars => Chars (Body_Id));
+
+         --  Indicate that the entity comes from source, to ensure that cross-
+         --  reference information is properly generated. The body itself is
+         --  rewritten during expansion, and the body entity will not appear in
+         --  calls to the operation.
+
+         Set_Comes_From_Source (Spec_Id, True);
+
+         if Nkind (Specification (N)) = N_Procedure_Specification then
+            Spec :=
+              Make_Procedure_Specification (Loc,
+                 Defining_Unit_Name       => Spec_Id,
+                 Parameter_Specifications => Formals);
+         else
+            Spec :=
+              Make_Function_Specification (Loc,
+                Defining_Unit_Name       => Spec_Id,
+                Parameter_Specifications => Formals,
+                Result_Definition        =>
+                  New_Occurrence_Of (Etype (Body_Id), Loc));
+         end if;
+
+         Decl := Make_Subprogram_Declaration (Loc, Specification => Spec);
+         Set_Corresponding_Body (Decl, Body_Id);
+         Set_Corresponding_Spec (N,    Spec_Id);
+
+         Insert_Before (N, Decl);
+
+         --  Associate all aspects and pragmas of the body with the spec. This
+         --  ensures that these annotations apply to the initial declaration of
+         --  the subprogram body.
+
+         Move_Aspects (From => N, To => Decl);
+         Move_Pragmas (From => N, To => Decl);
+
+         Analyze (Decl);
+
+         --  The analysis of the spec may generate pragmas which require manual
+         --  analysis. Since the generation of the spec and the relocation of
+         --  the annotations is driven by the expansion of the stand-alone
+         --  body, the pragmas will not be analyzed in a timely manner. Do this
+         --  now.
+
+         Analyze_Pragmas (Decl);
+
+         --  This subprogram has convention Intrinsic as per RM 6.3.1(10/2)
+         --  ensuring in particular that 'Access is illegal.
+
+         Set_Convention     (Spec_Id, Convention_Intrinsic);
+         Set_Has_Completion (Spec_Id);
+
+         return Spec_Id;
+      end Build_Internal_Protected_Declaration;
+
       ----------------------------------
       -- Build_Subprogram_Declaration --
       ----------------------------------
 
       procedure Build_Subprogram_Declaration is
-         procedure Move_Pragmas (From : Node_Id; To : Node_Id);
-         --  Relocate certain categorization pragmas from the declarative list
-         --  of subprogram body From and insert them after node To. The pragmas
-         --  in question are:
-         --    Ghost
-         --    Volatile_Function
-         --  Also copy pragma SPARK_Mode if present in the declarative list
-         --  of subprogram body From and insert it after node To. This pragma
-         --  should not be moved, as it applies to the body too.
-
-         ------------------
-         -- Move_Pragmas --
-         ------------------
-
-         procedure Move_Pragmas (From : Node_Id; To : Node_Id) is
-            Decl      : Node_Id;
-            Next_Decl : Node_Id;
-
-         begin
-            pragma Assert (Nkind (From) = N_Subprogram_Body);
-
-            --  The destination node must be part of a list, as the pragmas are
-            --  inserted after it.
-
-            pragma Assert (Is_List_Member (To));
-
-            --  Inspect the declarations of the subprogram body looking for
-            --  specific pragmas.
-
-            Decl := First (Declarations (N));
-            while Present (Decl) loop
-               Next_Decl := Next (Decl);
-
-               if Nkind (Decl) = N_Pragma then
-                  if Pragma_Name_Unmapped (Decl) = Name_SPARK_Mode then
-                     Insert_After (To, New_Copy_Tree (Decl));
-
-                  elsif Nam_In (Pragma_Name_Unmapped (Decl),
-                                Name_Ghost,
-                                Name_Volatile_Function)
-                  then
-                     Remove (Decl);
-                     Insert_After (To, Decl);
-                  end if;
-               end if;
-
-               Decl := Next_Decl;
-            end loop;
-         end Move_Pragmas;
-
-         --  Local variables
-
          Decl      : Node_Id;
          Subp_Decl : Node_Id;
-
-      --  Start of processing for Build_Subprogram_Declaration
 
       begin
          --  Create a matching subprogram spec using the profile of the body.
@@ -2791,22 +2938,8 @@ package body Sem_Ch6 is
                            and then
                          Is_Limited_Record (Designated_Type (Etype (Scop)))))
            and then Expander_Active
-
-           --  Avoid cases with no tasking support
-
-           and then RTE_Available (RE_Current_Master)
-           and then not Restriction_Active (No_Task_Hierarchy)
          then
-            Decl :=
-              Make_Object_Declaration (Loc,
-                Defining_Identifier =>
-                  Make_Defining_Identifier (Loc, Name_uMaster),
-                Constant_Present => True,
-                Object_Definition =>
-                  New_Occurrence_Of (RTE (RE_Master_Id), Loc),
-                Expression =>
-                  Make_Explicit_Dereference (Loc,
-                    New_Occurrence_Of (RTE (RE_Current_Master), Loc)));
+            Decl := Build_Master_Declaration (Loc);
 
             if Present (Declarations (N)) then
                Prepend (Decl, Declarations (N));
@@ -3315,6 +3448,77 @@ package body Sem_Ch6 is
          return Result;
       end Mask_Unfrozen_Types;
 
+      ------------------
+      -- Move_Pragmas --
+      ------------------
+
+      procedure Move_Pragmas (From : Node_Id; To : Node_Id) is
+         Decl       : Node_Id;
+         Insert_Nod : Node_Id;
+         Next_Decl  : Node_Id;
+
+      begin
+         pragma Assert (Nkind (From) = N_Subprogram_Body);
+
+         --  The pragmas are moved in an order-preserving fashion
+
+         Insert_Nod := To;
+
+         --  Inspect the declarations of the subprogram body and relocate all
+         --  candidate pragmas.
+
+         Decl := First (Declarations (From));
+         while Present (Decl) loop
+
+            --  Preserve the following declaration for iteration purposes, due
+            --  to possible relocation of a pragma.
+
+            Next_Decl := Next (Decl);
+
+            if Nkind (Decl) = N_Pragma then
+               --  Copy pragma SPARK_Mode if present in the declarative list
+               --  of subprogram body From and insert it after node To. This
+               --  pragma should not be moved, as it applies to the body too.
+
+               if Pragma_Name_Unmapped (Decl) = Name_SPARK_Mode then
+                  Insert_After (Insert_Nod, New_Copy_Tree (Decl));
+
+               --  Move relevant pragmas to the spec
+
+               elsif Nam_In (Pragma_Name_Unmapped (Decl),
+                             Name_Depends,
+                             Name_Ghost,
+                             Name_Global,
+                             Name_Pre,
+                             Name_Precondition,
+                             Name_Post,
+                             Name_Refined_Depends,
+                             Name_Refined_Global,
+                             Name_Refined_Post,
+                             Name_Inline,
+                             Name_Pure_Function,
+                             Name_Volatile_Function)
+               then
+                  Remove (Decl);
+                  Insert_After (Insert_Nod, Decl);
+                  Insert_Nod := Decl;
+               end if;
+
+            --  Skip internally generated code
+
+            elsif not Comes_From_Source (Decl) then
+               null;
+
+            --  No candidate pragmas are available for relocation
+
+            else
+               exit;
+            end if;
+
+            Decl := Next_Decl;
+         end loop;
+      end Move_Pragmas;
+
       ---------------------------
       -- Restore_Limited_Views --
       ---------------------------
@@ -3607,6 +3811,8 @@ package body Sem_Ch6 is
                --  are legal and can be processed ahead of the body.
                --  We make two copies of the given spec, one for the new
                --  declaration, and one for the body.
+               --  ??? This should be conditioned on front-end inlining rather
+               --  than GNATprove_Mode.
 
                if No (Spec_Id) and then GNATprove_Mode
 
@@ -3647,7 +3853,7 @@ package body Sem_Ch6 is
                   Build_Subprogram_Declaration;
 
                --  If this is a function that returns a constrained array, and
-               --  we are generating SPARK_For_C, create subprogram declaration
+               --  we are generating C code, create subprogram declaration
                --  to simplify subsequent C generation.
 
                elsif No (Spec_Id)
@@ -3734,15 +3940,15 @@ package body Sem_Ch6 is
 
       --  Deal with special case of a fully private operation in the body of
       --  the protected type. We must create a declaration for the subprogram,
-      --  in order to attach the protected subprogram that will be used in
-      --  internal calls. We exclude compiler generated bodies from the
-      --  expander since the issue does not arise for those cases.
+      --  in order to attach the subprogram that will be used in internal
+      --  calls. We exclude compiler generated bodies from the expander since
+      --  the issue does not arise for those cases.
 
       if No (Spec_Id)
         and then Comes_From_Source (N)
         and then Is_Protected_Type (Current_Scope)
       then
-         Spec_Id := Build_Private_Protected_Declaration (N);
+         Spec_Id := Build_Internal_Protected_Declaration (N);
       end if;
 
       --  If we are generating C and this is a function returning a constrained
@@ -6454,6 +6660,19 @@ package body Sem_Ch6 is
          return;
       end if;
 
+      --  An overriding indication is illegal on a subprogram declared
+      --  in a protected body, where there is no operation to override.
+
+      if (Must_Override (Spec) or else Must_Not_Override (Spec))
+        and then Is_List_Member (Decl)
+        and then Present (Parent (List_Containing (Decl)))
+        and then Nkind (Parent (List_Containing (Decl))) = N_Protected_Body
+      then
+         Error_Msg_N
+           ("illegal overriding indication in protected body", Decl);
+         return;
+      end if;
+
       --  The overriding operation is type conformant with the overridden one,
       --  but the names of the formals are not required to match. If the names
       --  appear permuted in the overriding operation, this is a possible
@@ -8343,6 +8562,9 @@ package body Sem_Ch6 is
                  Add_Extra_Formal
                    (E, RTE (RE_Master_Id),
                     E, BIP_Formal_Suffix (BIP_Task_Master));
+
+               Set_Has_Master_Entity (E);
+
                Discard :=
                  Add_Extra_Formal
                    (E, RTE (RE_Activation_Chain_Access),
@@ -10403,8 +10625,9 @@ package body Sem_Ch6 is
                              ("\move subprogram to the visible part"
                               & " (RM 3.9.3(10))", S);
 
-                        --  AI05-0073: extend this test to the case of a
-                        --  function with a controlling access result.
+                        --  Ada 2012 (AI05-0073): Extend this check to the case
+                        --  of a function whose result subtype is defined by an
+                        --  access_definition designating specific tagged type.
 
                         elsif Ekind (Etype (S)) = E_Anonymous_Access_Type
                           and then Is_Tagged_Type (Designated_Type (Etype (S)))
@@ -12198,7 +12421,7 @@ package body Sem_Ch6 is
       --  point of the call.
 
       if Out_Present (Spec) then
-         if Ekind_In (Id, E_Entry, E_Entry_Family)
+         if Is_Entry (Id)
            or else Is_Subprogram_Or_Generic_Subprogram (Id)
          then
             Set_Has_Out_Or_In_Out_Parameter (Id, True);
