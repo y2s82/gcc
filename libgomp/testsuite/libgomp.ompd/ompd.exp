@@ -25,7 +25,7 @@ lappend ALWAYS_CFLAGS "additional_flags=-fopenmp"
 
 # Gather a list of all tests.
 set tests [lsort [concat \
-		      [find $srcdir/$subdir *.c] \
+		      [find $srcdir/$subdir *.c]]]
 
 set ld_library_path $always_ld_library_path
 append ld_library_path [gcc-set-multilib-library-path $GCC_UNDER_TEST]
