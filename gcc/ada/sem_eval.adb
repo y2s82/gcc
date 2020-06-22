@@ -131,6 +131,11 @@ package body Sem_Eval is
    --  Range membership may either be statically known to be in range or out
    --  of range, or not statically known. Used for Test_In_Range below.
 
+   Checking_For_Potentially_Static_Expression : Boolean := False;
+   --  Global flag that is set True during Analyze_Static_Expression_Function
+   --  in order to verify that the result expression of a static expression
+   --  function is a potentially static function (see RM202x 6.8(5.3)).
+
    -----------------------
    -- Local Subprograms --
    -----------------------
@@ -595,7 +600,7 @@ package body Sem_Eval is
             --  mode since the actual target compiler may provide a wider
             --  range.
 
-            if CodePeer_Mode and then T = RTE (RE_Priority) then
+            if CodePeer_Mode and then Is_RTE (T, RE_Priority) then
                Set_Do_Range_Check (N, False);
 
             --  Determine if the out-of-range violation constitutes a warning
@@ -638,6 +643,15 @@ package body Sem_Eval is
          end if;
       end if;
    end Check_String_Literal_Length;
+
+   --------------------------------------------
+   -- Checking_Potentially_Static_Expression --
+   --------------------------------------------
+
+   function Checking_Potentially_Static_Expression return Boolean is
+   begin
+      return Checking_For_Potentially_Static_Expression;
+   end Checking_Potentially_Static_Expression;
 
    --------------------
    -- Choice_Matches --
@@ -1001,7 +1015,7 @@ package body Sem_Eval is
                     (Is_Known_Valid (Entity (Opnd))
                       or else Ekind (Entity (Opnd)) = E_In_Parameter
                       or else
-                        (Ekind (Entity (Opnd)) in Object_Kind
+                        (Is_Object (Entity (Opnd))
                           and then Present (Current_Value (Entity (Opnd))))))
            or else Is_OK_Static_Expression (Opnd);
       end Is_Known_Valid_Operand;
@@ -2224,6 +2238,38 @@ package body Sem_Eval is
 
             Resolve (N, Typ);
          end if;
+
+      --  Ada 202x (AI12-0075): If checking for potentially static expressions
+      --  is enabled and we have a call to a static expression function,
+      --  substitute a static value for the call, to allow folding the
+      --  expression. This supports checking the requirement of RM 6.8(5.3/5)
+      --  in Analyze_Expression_Function.
+
+      elsif Checking_Potentially_Static_Expression
+        and then Is_Static_Expression_Function_Call (N)
+      then
+         if Is_Integer_Type (Typ) then
+            Fold_Uint (N, Uint_1, Static => True);
+            return;
+
+         elsif Is_Real_Type (Typ) then
+            Fold_Ureal (N, Ureal_1, Static => True);
+            return;
+
+         elsif Is_Enumeration_Type (Typ) then
+            Fold_Uint
+              (N,
+               Expr_Value (Type_Low_Bound (Base_Type (Typ))),
+               Static => True);
+            return;
+
+         elsif Is_String_Type (Typ) then
+            Fold_Str
+              (N,
+               Strval (Make_String_Literal (Sloc (N), "")),
+               Static => True);
+            return;
+         end if;
       end if;
    end Eval_Call;
 
@@ -2504,6 +2550,39 @@ package body Sem_Eval is
 
             return;
          end if;
+
+      --  Ada 202x (AI12-0075): If checking for potentially static expressions
+      --  is enabled and we have a reference to a formal parameter of mode in,
+      --  substitute a static value for the reference, to allow folding the
+      --  expression. This supports checking the requirement of RM 6.8(5.3/5)
+      --  in Analyze_Expression_Function.
+
+      elsif Ekind (Def_Id) = E_In_Parameter
+        and then Checking_Potentially_Static_Expression
+        and then Is_Static_Expression_Function (Scope (Def_Id))
+      then
+         if Is_Integer_Type (Etype (Def_Id)) then
+            Fold_Uint (N, Uint_1, Static => True);
+            return;
+
+         elsif Is_Real_Type (Etype (Def_Id)) then
+            Fold_Ureal (N, Ureal_1, Static => True);
+            return;
+
+         elsif Is_Enumeration_Type (Etype (Def_Id)) then
+            Fold_Uint
+              (N,
+               Expr_Value (Type_Low_Bound (Base_Type (Etype (Def_Id)))),
+               Static => True);
+            return;
+
+         elsif Is_String_Type (Etype (Def_Id)) then
+            Fold_Str
+              (N,
+               Strval (Make_String_Literal (Sloc (N), "")),
+               Static => True);
+            return;
+         end if;
       end if;
 
       --  Fall through if the name is not static
@@ -2625,7 +2704,7 @@ package body Sem_Eval is
 
       --  Similarly if the indexed component appears as the prefix of an
       --  attribute we don't want to evaluate it, because at least for
-      --  some cases of attributes we need the identify (e.g. Access, Size)
+      --  some cases of attributes we need the identify (e.g. Access, Size).
 
       elsif Nkind (Parent (N)) = N_Attribute_Reference then
          return;
@@ -2789,7 +2868,7 @@ package body Sem_Eval is
       --  and misleading warnings.
 
       if (Nkind_In (Par, N_Case_Expression_Alternative, N_If_Expression)
-           or else Nkind (Parent (N)) not in N_Subexpr)
+           or else Nkind (Par) not in N_Subexpr)
         and then (not Nkind_In (Par, N_Case_Expression_Alternative,
                                      N_If_Expression)
                    or else Comes_From_Source (N))
@@ -3126,7 +3205,7 @@ package body Sem_Eval is
    -------------------------------
 
    --  A qualified expression is potentially static if its subtype mark denotes
-   --  a static subtype and its expression is potentially static (RM 4.9 (11)).
+   --  a static subtype and its expression is potentially static (RM 4.9 (10)).
 
    procedure Eval_Qualified_Expression (N : Node_Id) is
       Operand     : constant Node_Id   := Expression (N);
@@ -3149,7 +3228,7 @@ package body Sem_Eval is
       then
          Check_Non_Static_Context (Operand);
 
-         --  If operand is known to raise constraint_error, set the flag on the
+         --  If operand is known to raise Constraint_Error, set the flag on the
          --  expression so it does not get optimized away.
 
          if Nkind (Operand) = N_Raise_Constraint_Error then
@@ -3173,14 +3252,15 @@ package body Sem_Eval is
          return;
       end if;
 
-      --  Here we will fold, save Print_In_Hex indication
-
-      Hex := Nkind (Operand) = N_Integer_Literal
-               and then Print_In_Hex (Operand);
-
       --  Fold the result of qualification
 
       if Is_Discrete_Type (Target_Type) then
+
+         --  Save Print_In_Hex indication
+
+         Hex := Nkind (Operand) = N_Integer_Literal
+                  and then Print_In_Hex (Operand);
+
          Fold_Uint (N, Expr_Value (Operand), Stat);
 
          --  Preserve Print_In_Hex indication
@@ -5616,6 +5696,84 @@ package body Sem_Eval is
       end if;
    end Out_Of_Range;
 
+   ---------------------------
+   -- Predicates_Compatible --
+   ---------------------------
+
+   function Predicates_Compatible (T1, T2 : Entity_Id) return Boolean is
+
+      function T2_Rep_Item_Applies_To_T1 (Nam : Name_Id) return Boolean;
+      --  Return True if the rep item for Nam is either absent on T2 or also
+      --  applies to T1.
+
+      -------------------------------
+      -- T2_Rep_Item_Applies_To_T1 --
+      -------------------------------
+
+      function T2_Rep_Item_Applies_To_T1 (Nam : Name_Id) return Boolean is
+         Rep_Item : constant Node_Id := Get_Rep_Item (T2, Nam);
+
+      begin
+         return No (Rep_Item) or else Get_Rep_Item (T1, Nam) = Rep_Item;
+      end T2_Rep_Item_Applies_To_T1;
+
+   --  Start of processing for Predicates_Compatible
+
+   begin
+      if Ada_Version < Ada_2012 then
+         return True;
+
+      --  If T2 has no predicates, there is no compatibility issue
+
+      elsif not Has_Predicates (T2) then
+         return True;
+
+      --  T2 has predicates, if T1 has none then we defer to the static check
+
+      elsif not Has_Predicates (T1) then
+         null;
+
+      --  Both T2 and T1 have predicates, check that all predicates that apply
+      --  to T2 apply also to T1 (RM 4.9.1(9/3)).
+
+      elsif T2_Rep_Item_Applies_To_T1 (Name_Static_Predicate)
+        and then T2_Rep_Item_Applies_To_T1 (Name_Dynamic_Predicate)
+        and then T2_Rep_Item_Applies_To_T1 (Name_Predicate)
+      then
+         return True;
+      end if;
+
+      --  Implement the static check prescribed by RM 4.9.1(10/3)
+
+      if Is_Static_Subtype (T1) and then Is_Static_Subtype (T2) then
+         --  We just need to query Interval_Lists for discrete types
+
+         if Is_Discrete_Type (T1) and then Is_Discrete_Type (T2) then
+            declare
+               Interval_List1 : constant Interval_Lists.Discrete_Interval_List
+                 := Interval_Lists.Type_Intervals (T1);
+               Interval_List2 : constant Interval_Lists.Discrete_Interval_List
+                 := Interval_Lists.Type_Intervals (T2);
+            begin
+               return Interval_Lists.Is_Subset (Interval_List1, Interval_List2)
+                 and then not (Has_Predicates (T1)
+                                and then not Predicate_Checks_Suppressed (T2)
+                                and then Predicate_Checks_Suppressed (T1));
+            end;
+
+         else
+            --  TBD: Implement Interval_Lists for real types
+
+            return False;
+         end if;
+
+      --  If either subtype is not static, the predicates are not compatible
+
+      else
+         return False;
+      end if;
+   end Predicates_Compatible;
+
    ----------------------
    -- Predicates_Match --
    ----------------------
@@ -5856,6 +6014,21 @@ package body Sem_Eval is
       Set_Is_Static_Expression (N, Stat);
    end Rewrite_In_Raise_CE;
 
+   ------------------------------------------------
+   -- Set_Checking_Potentially_Static_Expression --
+   ------------------------------------------------
+
+   procedure Set_Checking_Potentially_Static_Expression (Value : Boolean) is
+   begin
+      --  Verify that we're not currently checking for a potentially static
+      --  expression unless we're disabling such checking.
+
+      pragma Assert
+        (not Checking_For_Potentially_Static_Expression or else not Value);
+
+      Checking_For_Potentially_Static_Expression := Value;
+   end Set_Checking_Potentially_Static_Expression;
+
    ---------------------
    -- String_Type_Len --
    ---------------------
@@ -5885,9 +6058,19 @@ package body Sem_Eval is
       Formal_Derived_Matching : Boolean := False) return Boolean
    is
    begin
+      --  A type is always statically compatible with itself
+
+      if T1 = T2 then
+         return True;
+
+      --  Not compatible if predicates are not compatible
+
+      elsif not Predicates_Compatible (T1, T2) then
+         return False;
+
       --  Scalar types
 
-      if Is_Scalar_Type (T1) then
+      elsif Is_Scalar_Type (T1) then
 
          --  Definitely compatible if we match
 

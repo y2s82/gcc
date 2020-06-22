@@ -1,3 +1,32 @@
+2020-06-21  David Edelsohn  <dje.gcc@gmail.com>
+
+	* config.host (extra_parts): Add crtcxa_64 and crtdbase_64.
+	* config/rs6000/t-aix-cxa: Explicitly compile 32 bit with -maix32
+	and 64 bit with -maix64.
+	* config/rs6000/t-slibgcc-aix: Remove extra @multilib_dir@ level.
+	Build and install AIX-style FAT libraries.
+
+2020-06-17  Samuel Thibault  <samuel.thibault@gnu.org>
+
+	* config.host (md_unwind_header) <i[34567]86-*-gnu*>: Set to
+	'i386/gnu-unwind.h'
+	* config/i386/gnu-unwind.h: New file.
+
+2020-06-17  Martin Liska  <mliska@suse.cz>
+
+	* libgcov-util.c (read_gcda_finalize): Remove const operator.
+	(merge_wrapper): Add both counts and use them properly.
+	(topn_to_memory_representation): New function.
+	(gcov_merge): Covert on disk representation to in memory
+	representation.
+	* libgcov.h: Remove const operator.
+
+2020-06-15  Max Filippov  <jcmvbkbc@gmail.com>
+
+	* configure: Regenerate.
+	* configure.ac: Use AC_COMPILE_IFELSE instead of manual
+	preprocessor invocation to check for __XTENSA_CALL0_ABI__.
+
 2020-06-09  Martin Liska  <mliska@suse.cz>
 
 	PR gcov-profile/95494

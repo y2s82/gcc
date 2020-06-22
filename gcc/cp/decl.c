@@ -2067,13 +2067,19 @@ duplicate_decls (tree newdecl, tree olddecl, bool newdecl_is_friend)
 		    "previous declaration of %qD", olddecl);
 	}
 
+      /* [dcl.fct.def.delete] A deleted definition of a function shall be the
+	 first declaration of the function or, for an explicit specialization
+	 of a function template, the first declaration of that
+	 specialization.  */
       if (!(DECL_TEMPLATE_INSTANTIATION (olddecl)
 	    && DECL_TEMPLATE_SPECIALIZATION (newdecl)))
 	{
 	  if (DECL_DELETED_FN (newdecl))
 	    {
 	      auto_diagnostic_group d;
-	      error_at (newdecl_loc, "deleted definition of %qD", newdecl);
+	      pedwarn (newdecl_loc, OPT_Wpedantic,
+		       "deleted definition of %qD is not first declaration",
+		       newdecl);
 	      inform (olddecl_loc,
 		      "previous declaration of %qD", olddecl);
 	    }
@@ -4009,13 +4015,9 @@ make_typename_type (tree context, tree name, enum tag_types tag_type,
       return error_mark_node;
     }
 
-  if (!perform_or_defer_access_check (TYPE_BINFO (context), t, t, complain))
+  if (!check_accessibility_of_qualified_id (t, /*object_type=*/NULL_TREE,
+					    context, complain))
     return error_mark_node;
-
-  /* If we are currently parsing a template and if T is a typedef accessed
-     through CONTEXT then we need to remember and check access of T at
-     template instantiation time.  */
-  add_typedef_to_current_template_for_access_check (t, context, input_location);
 
   if (want_template)
     return lookup_template_class (t, TREE_OPERAND (fullname, 1),

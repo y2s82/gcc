@@ -79,8 +79,7 @@ package body Exp_Attr is
    function Build_Array_VS_Func
      (Attr       : Node_Id;
       Formal_Typ : Entity_Id;
-      Array_Typ  : Entity_Id;
-      Comp_Typ   : Entity_Id) return Entity_Id;
+      Array_Typ  : Entity_Id) return Entity_Id;
    --  Validate the components of an array type by means of a function. Return
    --  the entity of the validation function. The parameters are as follows:
    --
@@ -91,8 +90,6 @@ package body Exp_Attr is
    --      parameter.
    --
    --    * Array_Typ - the array type whose components are to be validated
-   --
-   --    * Comp_Typ - the component type of the array
 
    function Build_Disp_Get_Task_Id_Call (Actual : Node_Id) return Node_Id;
    --  Build a call to Disp_Get_Task_Id, passing Actual as actual parameter
@@ -237,10 +234,11 @@ package body Exp_Attr is
    function Build_Array_VS_Func
      (Attr       : Node_Id;
       Formal_Typ : Entity_Id;
-      Array_Typ  : Entity_Id;
-      Comp_Typ   : Entity_Id) return Entity_Id
+      Array_Typ  : Entity_Id) return Entity_Id
    is
-      Loc : constant Source_Ptr := Sloc (Attr);
+      Loc      : constant Source_Ptr := Sloc (Attr);
+      Comp_Typ : constant Entity_Id :=
+        Validated_View (Component_Type (Array_Typ));
 
       function Validate_Component
         (Obj_Id  : Entity_Id;
@@ -737,7 +735,7 @@ package body Exp_Attr is
       --  Use the root type when dealing with a class-wide type
 
       if Is_Class_Wide_Type (Typ) then
-         Typ := Root_Type (Typ);
+         Typ := Validated_View (Root_Type (Typ));
       end if;
 
       Typ_Decl := Declaration_Node (Typ);
@@ -1737,10 +1735,42 @@ package body Exp_Attr is
       Pref  : constant Node_Id      := Prefix (N);
       Exprs : constant List_Id      := Expressions (N);
 
+      function Get_Integer_Type (Typ : Entity_Id) return Entity_Id;
+      --  Return a small integer type appropriate for the enumeration type
+
       procedure Rewrite_Attribute_Proc_Call (Pname : Entity_Id);
       --  Rewrites an attribute for Read, Write, Output, or Put_Image with a
       --  call to the appropriate TSS procedure. Pname is the entity for the
       --  procedure to call.
+
+      ----------------------
+      -- Get_Integer_Type --
+      ----------------------
+
+      function Get_Integer_Type (Typ : Entity_Id) return Entity_Id is
+         Siz     : constant Uint := Esize (Base_Type (Typ));
+         Int_Typ : Entity_Id;
+
+      begin
+         --  We need to accommodate invalid values of the base type since we
+         --  accept them for Enum_Rep and Pos, so we reason on the Esize. And
+         --  we use an unsigned type since the enumeration type is unsigned.
+
+         if Siz <= Esize (Standard_Short_Short_Unsigned) then
+            Int_Typ := Standard_Short_Short_Unsigned;
+
+         elsif Siz <= Esize (Standard_Short_Unsigned) then
+            Int_Typ := Standard_Short_Unsigned;
+
+         elsif Siz <= Esize (Standard_Unsigned) then
+            Int_Typ := Standard_Unsigned;
+
+         else
+            Int_Typ := Standard_Long_Long_Unsigned;
+         end if;
+
+         return Int_Typ;
+      end Get_Integer_Type;
 
       ---------------------------------
       -- Rewrite_Attribute_Proc_Call --
@@ -2499,6 +2529,19 @@ package body Exp_Attr is
          end if;
       end Alignment;
 
+      ---------------------------
+      -- Asm_Input, Asm_Output --
+      ---------------------------
+
+      --  The Asm_Input and Asm_Output attributes are not expanded at this
+      --  stage, but will be eliminated in the expansion of the Asm call,
+      --  see Exp_Intr for details. So the back end will never see them.
+
+      when Attribute_Asm_Input
+         | Attribute_Asm_Output
+      =>
+         null;
+
       ---------
       -- Bit --
       ---------
@@ -2517,34 +2560,11 @@ package body Exp_Attr is
       -- Bit_Position --
       ------------------
 
-      --  We compute this if a component clause was present, otherwise we leave
-      --  the computation up to the back end, since we don't know what layout
-      --  will be chosen.
+      --  We leave the computation up to the back end, since we don't know what
+      --  layout will be chosen if no component clause was specified.
 
-      --  Note that the attribute can apply to a naked record component
-      --  in generated code (i.e. the prefix is an identifier that
-      --  references the component or discriminant entity).
-
-      when Attribute_Bit_Position => Bit_Position : declare
-         CE : Entity_Id;
-
-      begin
-         if Nkind (Pref) = N_Identifier then
-            CE := Entity (Pref);
-         else
-            CE := Entity (Selector_Name (Pref));
-         end if;
-
-         if Known_Static_Component_Bit_Offset (CE) then
-            Rewrite (N,
-              Make_Integer_Literal (Loc,
-                Intval => Component_Bit_Offset (CE)));
-            Analyze_And_Resolve (N, Typ);
-
-         else
-            Apply_Universal_Integer_Attribute_Checks (N);
-         end if;
-      end Bit_Position;
+      when Attribute_Bit_Position =>
+         Apply_Universal_Integer_Attribute_Checks (N);
 
       ------------------
       -- Body_Version --
@@ -2787,6 +2807,15 @@ package body Exp_Attr is
          Analyze_And_Resolve (N, Id_Kind);
       end Caller;
 
+      --------------------
+      -- Component_Size --
+      --------------------
+
+      --  Component_Size is handled by the back end
+
+      when Attribute_Component_Size =>
+         Apply_Universal_Integer_Attribute_Checks (N);
+
       -------------
       -- Compose --
       -------------
@@ -2990,24 +3019,10 @@ package body Exp_Attr is
       -- Descriptor_Size --
       ---------------------
 
+      --  Descriptor_Size is handled by the back end
+
       when Attribute_Descriptor_Size =>
-
-         --  Attribute Descriptor_Size is handled by the back end when applied
-         --  to an unconstrained array type.
-
-         if Is_Array_Type (Ptyp)
-           and then not Is_Constrained (Ptyp)
-         then
-            Apply_Universal_Integer_Attribute_Checks (N);
-
-         --  For any other type, the descriptor size is 0 because there is no
-         --  actual descriptor, but the result is not formally static.
-
-         else
-            Rewrite (N, Make_Integer_Literal (Loc, 0));
-            Analyze (N);
-            Set_Is_Static_Expression (N, False);
-         end if;
+         Apply_Universal_Integer_Attribute_Checks (N);
 
       ---------------
       -- Elab_Body --
@@ -3146,8 +3161,6 @@ package body Exp_Attr is
 
       when Attribute_Enum_Rep => Enum_Rep : declare
          Expr : Node_Id;
-         Ityp : Entity_Id;
-         Psiz : Uint;
 
       begin
          --  Get the expression, which is X for Enum_Type'Enum_Rep (X) or
@@ -3177,22 +3190,7 @@ package body Exp_Attr is
          --  the size information.
 
          if Is_Enumeration_Type (Ptyp) then
-            Psiz := RM_Size (Base_Type (Ptyp));
-
-            if Psiz < 8 then
-               Ityp := Standard_Integer_8;
-
-            elsif Psiz < 16 then
-               Ityp := Standard_Integer_16;
-
-            elsif Psiz < 32 then
-               Ityp := Standard_Integer_32;
-
-            else
-               Ityp := Standard_Integer_64;
-            end if;
-
-            Rewrite (N, OK_Convert_To (Ityp, Expr));
+            Rewrite (N, OK_Convert_To (Get_Integer_Type (Ptyp), Expr));
             Convert_To_And_Rewrite (Typ, N);
 
          else
@@ -3385,42 +3383,80 @@ package body Exp_Attr is
          Analyze_And_Resolve (N, Typ);
       end Finalization_Size;
 
-      -----------
-      -- First --
-      -----------
+      -----------------
+      -- First, Last --
+      -----------------
 
-      when Attribute_First =>
-
+      when Attribute_First
+         | Attribute_Last
+      =>
          --  If the prefix type is a constrained packed array type which
          --  already has a Packed_Array_Impl_Type representation defined, then
-         --  replace this attribute with a direct reference to 'First of the
-         --  appropriate index subtype (since otherwise the back end will try
-         --  to give us the value of 'First for this implementation type).
+         --  replace this attribute with a direct reference to the attribute of
+         --  the appropriate index subtype (since otherwise the back end will
+         --  try to give us the value of 'First for this implementation type).
 
          if Is_Constrained_Packed_Array (Ptyp) then
             Rewrite (N,
               Make_Attribute_Reference (Loc,
-                Attribute_Name => Name_First,
+                Attribute_Name => Attribute_Name (N),
                 Prefix         =>
                   New_Occurrence_Of (Get_Index_Subtype (N), Loc)));
             Analyze_And_Resolve (N, Typ);
+
+         --  For a constrained array type, if the bound is a reference to an
+         --  entity which is not a discriminant, just replace with a direct
+         --  reference. Note that this must be in keeping with what is done
+         --  for scalar types in order for range checks to be elided in loops.
+
+         --  However, avoid doing it if the array type is public because, in
+         --  this case, we effectively rely on the back end to create public
+         --  symbols with consistent names across units for the array bounds.
+
+         elsif Is_Array_Type (Ptyp)
+           and then Is_Constrained (Ptyp)
+           and then not Is_Public (Ptyp)
+         then
+            declare
+               Bnd : Node_Id;
+
+            begin
+               if Id = Attribute_First then
+                  Bnd := Type_Low_Bound (Get_Index_Subtype (N));
+               else
+                  Bnd := Type_High_Bound (Get_Index_Subtype (N));
+               end if;
+
+               if Is_Entity_Name (Bnd)
+                 and then Ekind (Entity (Bnd)) /= E_Discriminant
+               then
+                  Rewrite (N, New_Occurrence_Of (Entity (Bnd), Loc));
+               end if;
+            end;
 
          --  For access type, apply access check as needed
 
          elsif Is_Access_Type (Ptyp) then
             Apply_Access_Check (N);
 
-         --  For scalar type, if low bound is a reference to an entity, just
+         --  For scalar type, if the bound is a reference to an entity, just
          --  replace with a direct reference. Note that we can only have a
          --  reference to a constant entity at this stage, anything else would
          --  have already been rewritten.
 
          elsif Is_Scalar_Type (Ptyp) then
             declare
-               Lo : constant Node_Id := Type_Low_Bound (Ptyp);
+               Bnd : Node_Id;
+
             begin
-               if Is_Entity_Name (Lo) then
-                  Rewrite (N, New_Occurrence_Of (Entity (Lo), Loc));
+               if Id = Attribute_First then
+                  Bnd := Type_Low_Bound (Ptyp);
+               else
+                  Bnd := Type_High_Bound (Ptyp);
+               end if;
+
+               if Is_Entity_Name (Bnd) then
+                  Rewrite (N, New_Occurrence_Of (Entity (Bnd), Loc));
                end if;
             end;
          end if;
@@ -3429,42 +3465,11 @@ package body Exp_Attr is
       -- First_Bit --
       ---------------
 
-      --  Compute this if component clause was present, otherwise we leave the
-      --  computation to be completed in the back-end, since we don't know what
-      --  layout will be chosen.
+      --  We leave the computation up to the back end, since we don't know what
+      --  layout will be chosen if no component clause was specified.
 
-      when Attribute_First_Bit => First_Bit_Attr : declare
-         CE : constant Entity_Id := Entity (Selector_Name (Pref));
-
-      begin
-         --  In Ada 2005 (or later) if we have the non-default bit order, then
-         --  we return the original value as given in the component clause
-         --  (RM 2005 13.5.2(3/2)).
-
-         if Present (Component_Clause (CE))
-           and then Ada_Version >= Ada_2005
-           and then Reverse_Bit_Order (Scope (CE))
-         then
-            Rewrite (N,
-              Make_Integer_Literal (Loc,
-                Intval => Expr_Value (First_Bit (Component_Clause (CE)))));
-            Analyze_And_Resolve (N, Typ);
-
-         --  Otherwise (Ada 83/95 or Ada 2005 or later with default bit order),
-         --  rewrite with normalized value if we know it statically.
-
-         elsif Known_Static_Component_Bit_Offset (CE) then
-            Rewrite (N,
-              Make_Integer_Literal (Loc,
-                Component_Bit_Offset (CE) mod System_Storage_Unit));
-            Analyze_And_Resolve (N, Typ);
-
-         --  Otherwise left to back end, just do universal integer checks
-
-         else
-            Apply_Universal_Integer_Attribute_Checks (N);
-         end if;
-      end First_Bit_Attr;
+      when Attribute_First_Bit =>
+         Apply_Universal_Integer_Attribute_Checks (N);
 
       --------------------------------
       -- Fixed_Value, Integer_Value --
@@ -4090,88 +4095,15 @@ package body Exp_Attr is
 
          Analyze_And_Resolve (N);
 
-      ----------
-      -- Last --
-      ----------
-
-      when Attribute_Last =>
-
-         --  If the prefix type is a constrained packed array type which
-         --  already has a Packed_Array_Impl_Type representation defined, then
-         --  replace this attribute with a direct reference to 'Last of the
-         --  appropriate index subtype (since otherwise the back end will try
-         --  to give us the value of 'Last for this implementation type).
-
-         if Is_Constrained_Packed_Array (Ptyp) then
-            Rewrite (N,
-              Make_Attribute_Reference (Loc,
-                Attribute_Name => Name_Last,
-                Prefix => New_Occurrence_Of (Get_Index_Subtype (N), Loc)));
-            Analyze_And_Resolve (N, Typ);
-
-         --  For access type, apply access check as needed
-
-         elsif Is_Access_Type (Ptyp) then
-            Apply_Access_Check (N);
-
-         --  For scalar type, if high bound is a reference to an entity, just
-         --  replace with a direct reference. Note that we can only have a
-         --  reference to a constant entity at this stage, anything else would
-         --  have already been rewritten.
-
-         elsif Is_Scalar_Type (Ptyp) then
-            declare
-               Hi : constant Node_Id := Type_High_Bound (Ptyp);
-            begin
-               if Is_Entity_Name (Hi) then
-                  Rewrite (N, New_Occurrence_Of (Entity (Hi), Loc));
-               end if;
-            end;
-         end if;
-
       --------------
       -- Last_Bit --
       --------------
 
-      --  We compute this if a component clause was present, otherwise we leave
-      --  the computation up to the back end, since we don't know what layout
-      --  will be chosen.
+      --  We leave the computation up to the back end, since we don't know what
+      --  layout will be chosen if no component clause was specified.
 
-      when Attribute_Last_Bit => Last_Bit_Attr : declare
-         CE : constant Entity_Id := Entity (Selector_Name (Pref));
-
-      begin
-         --  In Ada 2005 (or later) if we have the non-default bit order, then
-         --  we return the original value as given in the component clause
-         --  (RM 2005 13.5.2(3/2)).
-
-         if Present (Component_Clause (CE))
-           and then Ada_Version >= Ada_2005
-           and then Reverse_Bit_Order (Scope (CE))
-         then
-            Rewrite (N,
-              Make_Integer_Literal (Loc,
-                Intval => Expr_Value (Last_Bit (Component_Clause (CE)))));
-            Analyze_And_Resolve (N, Typ);
-
-         --  Otherwise (Ada 83/95 or Ada 2005 or later with default bit order),
-         --  rewrite with normalized value if we know it statically.
-
-         elsif Known_Static_Component_Bit_Offset (CE)
-           and then Known_Static_Esize (CE)
-         then
-            Rewrite (N,
-              Make_Integer_Literal (Loc,
-               Intval => (Component_Bit_Offset (CE) mod System_Storage_Unit)
-                                + Esize (CE) - 1));
-            Analyze_And_Resolve (N, Typ);
-
-         --  Otherwise leave to back end, just apply universal integer checks
-
-         else
-            Apply_Universal_Integer_Attribute_Checks (N);
-         end if;
-      end Last_Bit_Attr;
+      when Attribute_Last_Bit =>
+         Apply_Universal_Integer_Attribute_Checks (N);
 
       ------------------
       -- Leading_Part --
@@ -4655,6 +4587,7 @@ package body Exp_Attr is
          Typ     : constant Entity_Id := Etype (N);
          CW_Temp : Entity_Id;
          CW_Typ  : Entity_Id;
+         Decl    : Node_Id;
          Ins_Nod : Node_Id;
          Subp    : Node_Id;
          Temp    : Entity_Id;
@@ -4753,13 +4686,15 @@ package body Exp_Attr is
             CW_Temp := Make_Temporary (Loc, 'T');
             CW_Typ  := Class_Wide_Type (Typ);
 
-            Insert_Before_And_Analyze (Ins_Nod,
+            Decl :=
               Make_Object_Declaration (Loc,
                 Defining_Identifier => CW_Temp,
                 Constant_Present    => True,
                 Object_Definition   => New_Occurrence_Of (CW_Typ, Loc),
                 Expression          =>
-                  Convert_To (CW_Typ, Relocate_Node (Pref))));
+                  Convert_To (CW_Typ, Relocate_Node (Pref)));
+
+            Insert_Before_And_Analyze (Ins_Nod, Decl);
 
             --  Generate:
             --    Temp : Typ renames Typ (CW_Temp);
@@ -4777,12 +4712,15 @@ package body Exp_Attr is
             --  Generate:
             --    Temp : constant Typ := Pref;
 
-            Insert_Before_And_Analyze (Ins_Nod,
+            Decl :=
               Make_Object_Declaration (Loc,
                 Defining_Identifier => Temp,
                 Constant_Present    => True,
                 Object_Definition   => New_Occurrence_Of (Typ, Loc),
-                Expression          => Relocate_Node (Pref)));
+                Expression          => Relocate_Node (Pref));
+
+            Insert_Before_And_Analyze (Ins_Nod, Decl);
+
          end if;
 
          if Present (Subp) then
@@ -4794,7 +4732,7 @@ package body Exp_Attr is
          --  to reflect the new placement of the prefix.
 
          if Validity_Checks_On and then Validity_Check_Operands then
-            Ensure_Valid (Pref);
+            Ensure_Valid (Expression (Decl));
          end if;
 
          Rewrite (N, New_Occurrence_Of (Temp, Loc));
@@ -5159,9 +5097,6 @@ package body Exp_Attr is
       -- Pos --
       ---------
 
-      --  For enumeration types with a standard representation, Pos is handled
-      --  by the back end.
-
       --  For enumeration types, with a non-standard representation we generate
       --  a call to the _Rep_To_Pos function created when the type was frozen.
       --  The call has the form:
@@ -5172,17 +5107,21 @@ package body Exp_Attr is
       --  Program_Error to be raised if the expression has an invalid
       --  representation, and False if range checks are suppressed.
 
+      --  For enumeration types with a standard representation, Pos can be
+      --  rewritten as a simple conversion with Conversion_OK set.
+
       --  For integer types, Pos is equivalent to a simple integer conversion
       --  and we rewrite it as such.
 
       when Attribute_Pos => Pos : declare
+         Expr : constant Node_Id := First (Exprs);
          Etyp : Entity_Id := Base_Type (Ptyp);
 
       begin
          --  Deal with zero/non-zero boolean values
 
          if Is_Boolean_Type (Etyp) then
-            Adjust_Condition (First (Exprs));
+            Adjust_Condition (Expr);
             Etyp := Standard_Boolean;
             Set_Prefix (N, New_Occurrence_Of (Standard_Boolean, Loc));
          end if;
@@ -5202,65 +5141,43 @@ package body Exp_Attr is
                        New_Occurrence_Of (TSS (Etyp, TSS_Rep_To_Pos), Loc),
                      Parameter_Associations => Exprs)));
 
-               Analyze_And_Resolve (N, Typ);
+            --  Standard enumeration type (replace by conversion)
 
-            --  Standard enumeration type (do universal integer check)
+            --  This is simply a direct conversion from the enumeration type to
+            --  the target integer type, which is treated by the back end as a
+            --  normal integer conversion, treating the enumeration type as an
+            --  integer, which is exactly what we want. We set Conversion_OK to
+            --  make sure that the analyzer does not complain about what might
+            --  be an illegal conversion.
+
+            --  However the target type is universal integer in most cases,
+            --  which is a very large type, so we first convert to a small
+            --  signed integer type in order not to lose the size information.
 
             else
-               Apply_Universal_Integer_Attribute_Checks (N);
+               Rewrite (N, OK_Convert_To (Get_Integer_Type (Ptyp), Expr));
+               Convert_To_And_Rewrite (Typ, N);
+
             end if;
 
          --  Deal with integer types (replace by conversion)
 
          elsif Is_Integer_Type (Etyp) then
-            Rewrite (N, Convert_To (Typ, First (Exprs)));
-            Analyze_And_Resolve (N, Typ);
+            Rewrite (N, Convert_To (Typ, Expr));
          end if;
 
+         Analyze_And_Resolve (N, Typ);
       end Pos;
 
       --------------
       -- Position --
       --------------
 
-      --  We compute this if a component clause was present, otherwise we leave
-      --  the computation up to the back end, since we don't know what layout
-      --  will be chosen.
+      --  We leave the computation up to the back end, since we don't know what
+      --  layout will be chosen if no component clause was specified.
 
-      when Attribute_Position => Position_Attr : declare
-         CE : constant Entity_Id := Entity (Selector_Name (Pref));
-
-      begin
-         if Present (Component_Clause (CE)) then
-
-            --  In Ada 2005 (or later) if we have the non-default bit order,
-            --  then we return the original value as given in the component
-            --  clause (RM 2005 13.5.2(2/2)).
-
-            if Ada_Version >= Ada_2005
-              and then Reverse_Bit_Order (Scope (CE))
-            then
-               Rewrite (N,
-                  Make_Integer_Literal (Loc,
-                    Intval => Expr_Value (Position (Component_Clause (CE)))));
-
-            --  Otherwise (Ada 83 or 95, or default bit order specified in
-            --  later Ada version), return the normalized value.
-
-            else
-               Rewrite (N,
-                 Make_Integer_Literal (Loc,
-                   Intval => Component_Bit_Offset (CE) / System_Storage_Unit));
-            end if;
-
-            Analyze_And_Resolve (N, Typ);
-
-         --  If back end is doing things, just apply universal integer checks
-
-         else
-            Apply_Universal_Integer_Attribute_Checks (N);
-         end if;
-      end Position_Attr;
+      when Attribute_Position =>
+         Apply_Universal_Integer_Attribute_Checks (N);
 
       ----------
       -- Pred --
@@ -6660,12 +6577,12 @@ package body Exp_Attr is
       -- Val --
       ---------
 
-      --  For enumeration types with a standard representation, Val is handled
-      --  by the back end.
-
       --  For enumeration types with a non-standard representation we use the
       --  _Pos_To_Rep array that was created when the type was frozen, unless
       --  the representation is contiguous in which case we use an addition.
+
+      --  For enumeration types with a standard representation, Val can be
+      --  rewritten as a simple conversion with Conversion_OK set.
 
       --  For integer types, Val is equivalent to a simple integer conversion
       --  and we rewrite it as such.
@@ -6749,11 +6666,16 @@ package body Exp_Attr is
                         Right_Opnd =>
                           Convert_To (Ityp, Expr))));
 
-                  --  Suppress checks since the range check was done above
-                  --  and it guarantees that the addition cannot overflow.
+               --  Standard enumeration type
 
-                  Analyze_And_Resolve (N, Typ, Suppress => All_Checks);
+               else
+                  Rewrite (N, OK_Convert_To (Typ, Expr));
                end if;
+
+               --  Suppress checks since the range check was done above
+               --  and it guarantees that the addition cannot overflow.
+
+               Analyze_And_Resolve (N, Typ, Suppress => All_Checks);
             end if;
 
          --  Deal with integer types
@@ -7170,16 +7092,16 @@ package body Exp_Attr is
       -------------------
 
       when Attribute_Valid_Scalars => Valid_Scalars : declare
-         Val_Typ  : constant Entity_Id := Validated_View (Ptyp);
-         Comp_Typ : Entity_Id;
-         Expr     : Node_Id;
+         Val_Typ : constant Entity_Id := Validated_View (Ptyp);
+         Expr    : Node_Id;
 
       begin
          --  Assume that the prefix does not need validation
 
          Expr := Empty;
 
-         --  Attribute 'Valid_Scalars is not supported on private tagged types
+         --  Attribute 'Valid_Scalars is not supported on private tagged types;
+         --  see a detailed explanation where this attribute is analyzed.
 
          if Is_Private_Type (Ptyp) and then Is_Tagged_Type (Ptyp) then
             null;
@@ -7212,21 +7134,16 @@ package body Exp_Attr is
          --  dimensions of the array while checking individual components.
 
          elsif Is_Array_Type (Val_Typ) then
-            Comp_Typ := Validated_View (Component_Type (Val_Typ));
-
-            if Scalar_Part_Present (Comp_Typ) then
-               Expr :=
-                 Make_Function_Call (Loc,
-                   Name                   =>
-                     New_Occurrence_Of
-                       (Build_Array_VS_Func
-                         (Attr       => N,
-                          Formal_Typ => Ptyp,
-                          Array_Typ  => Val_Typ,
-                          Comp_Typ   => Comp_Typ),
-                       Loc),
-                   Parameter_Associations => New_List (Pref));
-            end if;
+            Expr :=
+              Make_Function_Call (Loc,
+                Name                   =>
+                  New_Occurrence_Of
+                    (Build_Array_VS_Func
+                      (Attr       => N,
+                       Formal_Typ => Ptyp,
+                       Array_Typ  => Val_Typ),
+                    Loc),
+                Parameter_Associations => New_List (Pref));
 
          --  Validate the scalar components, discriminants of a record type by
          --  examining the structure of a record type.
@@ -7548,40 +7465,17 @@ package body Exp_Attr is
          Rewrite_Attribute_Proc_Call (Pname);
       end Write;
 
-      --  Component_Size is handled by the back end, unless the component size
-      --  is known at compile time, which is always true in the packed array
-      --  case. It is important that the packed array case is handled in the
-      --  front end (see Eval_Attribute) since the back end would otherwise get
-      --  confused by the equivalent packed array type.
-
-      when Attribute_Component_Size =>
-         null;
-
       --  The following attributes are handled by the back end (except that
       --  static cases have already been evaluated during semantic processing,
       --  but in any case the back end should not count on this).
 
-      --  The back end also handles the non-class-wide cases of Size
-
-      when Attribute_Bit_Order
-         | Attribute_Code_Address
-         | Attribute_Definite
+      when Attribute_Code_Address
          | Attribute_Deref
          | Attribute_Null_Parameter
          | Attribute_Passed_By_Reference
          | Attribute_Pool_Address
-         | Attribute_Scalar_Storage_Order
       =>
          null;
-
-      --  The following attributes are also handled by the back end, but return
-      --  a universal integer result, so may need a conversion for checking
-      --  that the result is in range.
-
-      when Attribute_Aft
-         | Attribute_Max_Alignment_For_Allocation
-      =>
-         Apply_Universal_Integer_Attribute_Checks (N);
 
       --  The following attributes should not appear at this stage, since they
       --  have already been handled by the analyzer (and properly rewritten
@@ -7589,12 +7483,15 @@ package body Exp_Attr is
 
       when Attribute_Abort_Signal
          | Attribute_Address_Size
+         | Attribute_Aft
          | Attribute_Atomic_Always_Lock_Free
          | Attribute_Base
+         | Attribute_Bit_Order
          | Attribute_Class
          | Attribute_Compiler_Version
          | Attribute_Default_Bit_Order
          | Attribute_Default_Scalar_Storage_Order
+         | Attribute_Definite
          | Attribute_Delta
          | Attribute_Denorm
          | Attribute_Digits
@@ -7616,6 +7513,7 @@ package body Exp_Attr is
          | Attribute_Machine_Overflows
          | Attribute_Machine_Radix
          | Attribute_Machine_Rounds
+         | Attribute_Max_Alignment_For_Allocation
          | Attribute_Maximum_Alignment
          | Attribute_Model_Emin
          | Attribute_Model_Epsilon
@@ -7630,6 +7528,7 @@ package body Exp_Attr is
          | Attribute_Safe_Large
          | Attribute_Safe_Last
          | Attribute_Safe_Small
+         | Attribute_Scalar_Storage_Order
          | Attribute_Scale
          | Attribute_Signed_Zeros
          | Attribute_Small
@@ -7645,15 +7544,6 @@ package body Exp_Attr is
          | Attribute_Word_Size
       =>
          raise Program_Error;
-
-      --  The Asm_Input and Asm_Output attributes are not expanded at this
-      --  stage, but will be eliminated in the expansion of the Asm call, see
-      --  Exp_Intr for details. So the back end will never see these either.
-
-      when Attribute_Asm_Input
-         | Attribute_Asm_Output
-      =>
-         null;
       end case;
 
    --  Note: as mentioned earlier, individual sections of the above case

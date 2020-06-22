@@ -3952,6 +3952,14 @@ add_list_candidates (tree fns, tree first_arg,
       if (any_strictly_viable (*candidates))
 	return;
     }
+  else if (CONSTRUCTOR_IS_DESIGNATED_INIT (init_list)
+	   && !CP_AGGREGATE_TYPE_P (totype))
+    {
+      if (complain & tf_error)
+	error ("designated initializers cannot be used with a "
+	       "non-aggregate type %qT", totype);
+      return;
+    }
 
   /* Expand the CONSTRUCTOR into a new argument vec.  */
   vec<tree, va_gc> *new_args;
@@ -4301,6 +4309,11 @@ implicit_conversion_error (location_t loc, tree type, tree expr)
     instantiate_type (type, expr, complain);
   else if (invalid_nonstatic_memfn_p (loc, expr, complain))
     /* We gave an error.  */;
+  else if (BRACE_ENCLOSED_INITIALIZER_P (expr)
+	   && CONSTRUCTOR_IS_DESIGNATED_INIT (expr)
+	   && !CP_AGGREGATE_TYPE_P (type))
+    error_at (loc, "designated initializers cannot be used with a "
+	      "non-aggregate type %qT", type);
   else
     {
       range_label_for_type_mismatch label (TREE_TYPE (expr), type);
@@ -6328,7 +6341,7 @@ build_new_op_1 (const op_location_t &loc, enum tree_code code, int flags,
 	      result = build_over_call (cand, LOOKUP_NORMAL, ocomplain);
 	    }
 
-	  if (trivial_fn_p (cand->fn))
+	  if (trivial_fn_p (cand->fn) || DECL_IMMEDIATE_FUNCTION_P (cand->fn))
 	    /* There won't be a CALL_EXPR.  */;
 	  else if (result && result != error_mark_node)
 	    {
@@ -7081,42 +7094,6 @@ complain_about_access (tree decl, tree diag_decl, bool issue_error)
 	error ("%q#D is inaccessible within this context", diag_decl);
       inform (DECL_SOURCE_LOCATION (diag_decl), "declared here");
     }
-}
-
-/* If the current scope isn't allowed to access DECL along
-   BASETYPE_PATH, give an error.  The most derived class in
-   BASETYPE_PATH is the one used to qualify DECL. DIAG_DECL is
-   the declaration to use in the error diagnostic.  */
-
-bool
-enforce_access (tree basetype_path, tree decl, tree diag_decl,
-		tsubst_flags_t complain, access_failure_info *afi)
-{
-  gcc_assert (TREE_CODE (basetype_path) == TREE_BINFO);
-
-  if (flag_new_inheriting_ctors
-      && DECL_INHERITED_CTOR (decl))
-    {
-      /* 7.3.3/18: The additional constructors are accessible if they would be
-	 accessible when used to construct an object of the corresponding base
-	 class.  */
-      decl = strip_inheriting_ctors (decl);
-      basetype_path = lookup_base (basetype_path, DECL_CONTEXT (decl),
-				   ba_any, NULL, complain);
-    }
-
-  if (!accessible_p (basetype_path, decl, true))
-    {
-      if (flag_new_inheriting_ctors)
-	diag_decl = strip_inheriting_ctors (diag_decl);
-      if (complain & tf_error)
-	complain_about_access (decl, diag_decl, true);
-      if (afi)
-	afi->record_access_failure (basetype_path, decl, diag_decl);
-      return false;
-    }
-
-  return true;
 }
 
 /* Initialize a temporary of type TYPE with EXPR.  The FLAGS are a
@@ -11458,12 +11435,13 @@ joust (struct z_candidate *cand1, struct z_candidate *cand2, bool warn,
 	return winner;
     }
 
-  /* Concepts: ... or, if not that, F1 is more constrained than F2.
+  /* Concepts: F1 and F2 are non-template functions with the same
+     parameter-type-lists, and F1 is more constrained than F2 according to the
+     partial ordering of constraints described in 13.5.4.  */
 
-     FIXME: For function templates with no winner, this subsumption may
-     be computed a separate time.  This needs to be validated, and if
-     so, the redundant check removed.  */
-  if (flag_concepts && DECL_P (cand1->fn) && DECL_P (cand2->fn))
+  if (flag_concepts && DECL_P (cand1->fn) && DECL_P (cand2->fn)
+      && !cand1->template_decl && !cand2->template_decl
+      && cand_parms_match (cand1, cand2))
     {
       winner = more_constrained (cand1->fn, cand2->fn);
       if (winner)

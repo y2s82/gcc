@@ -23,6 +23,7 @@
 --                                                                          --
 ------------------------------------------------------------------------------
 
+with Aspects;  use Aspects;
 with Atree;    use Atree;
 with Checks;   use Checks;
 with Debug;    use Debug;
@@ -1546,8 +1547,8 @@ package body Sem_Res is
             null;
 
          elsif Nam_In (Op_Name, Name_Op_Multiply, Name_Op_Divide)
-           and then Is_Fixed_Point_Type (Etype (Left_Opnd  (Op_Node)))
-           and then Is_Fixed_Point_Type (Etype (Right_Opnd (Op_Node)))
+           and then Is_Fixed_Point_Type (Etype (Act1))
+           and then Is_Fixed_Point_Type (Etype (Act2))
          then
             if Pack /= Standard_Standard then
                Error := True;
@@ -1558,7 +1559,8 @@ package body Sem_Res is
 
          elsif Ada_Version >= Ada_2005
            and then Nam_In (Op_Name, Name_Op_Eq, Name_Op_Ne)
-           and then Ekind (Etype (Act1)) = E_Anonymous_Access_Type
+           and then (Is_Anonymous_Access_Type (Etype (Act1))
+                      or else Is_Anonymous_Access_Type (Etype (Act2)))
          then
             null;
 
@@ -2141,6 +2143,12 @@ package body Sem_Res is
          Set_Analyzed (N, True);
          return;
       end Resolution_Failed;
+
+      Literal_Aspect_Map :
+        constant array (N_Numeric_Or_String_Literal) of Aspect_Id :=
+          (N_Integer_Literal => Aspect_Integer_Literal,
+           N_Real_Literal    => Aspect_Real_Literal,
+           N_String_Literal  => Aspect_String_Literal);
 
    --  Start of processing for Resolve
 
@@ -2843,6 +2851,80 @@ package body Sem_Res is
                begin
                   Check_Aggr (N);
                end;
+            end if;
+
+            --  Rewrite Literal as a call if the corresponding literal aspect
+            --  is set.
+
+            if Nkind (N) in N_Numeric_Or_String_Literal
+              and then Present
+                         (Find_Aspect (Typ, Literal_Aspect_Map (Nkind (N))))
+            then
+               declare
+                  function Literal_Text (N : Node_Id) return String_Id;
+                  --  Returns the text of a literal node
+
+                  -------------------
+                  --  Literal_Text --
+                  -------------------
+
+                  function Literal_Text (N : Node_Id) return String_Id is
+                  begin
+                     pragma Assert (Nkind (N) in N_Numeric_Or_String_Literal);
+
+                     if Nkind (N) = N_String_Literal then
+                        return Strval (N);
+                     else
+                        return String_From_Numeric_Literal (N);
+                     end if;
+                  end Literal_Text;
+
+                  Lit_Aspect : constant Aspect_Id :=
+                    Literal_Aspect_Map (Nkind (N));
+
+                  Callee : constant Entity_Id :=
+                    Entity (Expression (Find_Aspect (Typ, Lit_Aspect)));
+
+                  Loc  : constant Source_Ptr := Sloc (N);
+
+                  Name : constant Node_Id :=
+                    Make_Identifier (Loc, Chars (Callee));
+
+                  Param : constant Node_Id :=
+                    Make_String_Literal (Loc, Literal_Text (N));
+
+                  Params : constant List_Id := New_List (Param);
+
+                  Call : Node_Id :=
+                    Make_Function_Call
+                      (Sloc                   => Loc,
+                       Name                   => Name,
+                       Parameter_Associations => Params);
+               begin
+                  Set_Entity (Name, Callee);
+                  Set_Is_Overloaded (Name, False);
+                  if Lit_Aspect = Aspect_String_Literal then
+                     Set_Etype (Param, Standard_Wide_Wide_String);
+                  else
+                     Set_Etype (Param, Standard_String);
+                  end if;
+                  Set_Etype (Call, Etype (Callee));
+
+                  --  Conversion needed in case of an inherited aspect
+                  --  of a derived type.
+                  --
+                  --  ??? Need to do something different here for downward
+                  --  tagged conversion case (which is only possible in the
+                  --  case of a null extension); the current call to
+                  --  Convert_To results in an error message about an illegal
+                  --  downward conversion.
+
+                  Call := Convert_To (Typ, Call);
+
+                  Rewrite (N, Call);
+               end;
+               Analyze_And_Resolve (N, Typ);
+               return;
             end if;
 
             --  Looks like we have a type error, but check for special case
@@ -5051,8 +5133,9 @@ package body Sem_Res is
               ("class-wide allocator not allowed for this access type", N);
          end if;
 
-         Resolve (Expression (E), Etype (E));
-         Check_Non_Static_Context (Expression (E));
+         --  Do a full resolution to apply constraint and predicate checks
+
+         Resolve_Qualified_Expression (E, Etype (E));
          Check_Unset_Reference (Expression (E));
 
          --  Allocators generated by the build-in-place expansion mechanism
@@ -5084,16 +5167,6 @@ package body Sem_Res is
 
                Explain_Limited_Type (Etype (E), N);
             end if;
-         end if;
-
-         --  A qualified expression requires an exact match of the type. Class-
-         --  wide matching is not allowed.
-
-         if (Is_Class_Wide_Type (Etype (Expression (E)))
-              or else Is_Class_Wide_Type (Etype (E)))
-           and then Base_Type (Etype (Expression (E))) /= Base_Type (Etype (E))
-         then
-            Wrong_Type (Expression (E), Etype (E));
          end if;
 
          --  Calls to build-in-place functions are not currently supported in
@@ -6479,6 +6552,7 @@ package body Sem_Res is
 
          if Same_Or_Aliased_Subprograms (Nam, Scop)
            and then not Restriction_Active (No_Recursion)
+           and then not Is_Static_Expression_Function (Scop)
            and then Check_Infinite_Recursion (N)
          then
             --  Here we detected and flagged an infinite recursion, so we do
@@ -6495,6 +6569,20 @@ package body Sem_Res is
          else
             Scope_Loop : while Scop /= Standard_Standard loop
                if Same_Or_Aliased_Subprograms (Nam, Scop) then
+
+                  --  Ada 202x (AI12-0075): Static expression function are
+                  --  never allowed to make a recursive call, as specified
+                  --  by 6.8(5.4/5).
+
+                  if Is_Static_Expression_Function (Scop) then
+                     Error_Msg_N
+                       ("recursive call not allowed in static expression "
+                          & "function", N);
+
+                     Set_Error_Posted (Scop);
+
+                     exit Scope_Loop;
+                  end if;
 
                   --  Although in general case, recursion is not statically
                   --  checkable, the case of calling an immediately containing
@@ -6633,6 +6721,11 @@ package body Sem_Res is
       --  is already present. It may not be available if e.g. the subprogram is
       --  declared in a child instance.
 
+      --  g) If the subprogram is a static expression function and the call is
+      --  a static call (the actuals are all static expressions), then we never
+      --  want to create a transient scope (this could occur in the case of a
+      --  static string-returning call).
+
       if Is_Inlined (Nam)
         and then Has_Pragma_Inline (Nam)
         and then Nkind (Unit_Declaration_Node (Nam)) = N_Subprogram_Declaration
@@ -6644,6 +6737,7 @@ package body Sem_Res is
         or else Is_Build_In_Place_Function (Nam)
         or else Is_Intrinsic_Subprogram (Nam)
         or else Is_Inlinable_Expression_Function (Nam)
+        or else Is_Static_Expression_Function_Call (N)
       then
          null;
 
@@ -6908,12 +7002,26 @@ package body Sem_Res is
 
       Warn_On_Overlapping_Actuals (Nam, N);
 
+      --  Ada 202x (AI12-0075): If the call is a static call to a static
+      --  expression function, then we want to "inline" the call, replacing
+      --  it with the folded static result. This is not done if the checking
+      --  for a potentially static expression is enabled or if an error has
+      --  been posted on the call (which may be due to the check for recursive
+      --  calls, in which case we don't want to fall into infinite recursion
+      --  when doing the inlining).
+
+      if not Checking_Potentially_Static_Expression
+        and then Is_Static_Expression_Function_Call (N)
+        and then not Error_Posted (Ultimate_Alias (Nam))
+      then
+         Inline_Static_Expression_Function_Call (N, Ultimate_Alias (Nam));
+
       --  In GNATprove mode, expansion is disabled, but we want to inline some
       --  subprograms to facilitate formal verification. Indirect calls through
       --  a subprogram type or within a generic cannot be inlined. Inlining is
       --  performed only for calls subject to SPARK_Mode on.
 
-      if GNATprove_Mode
+      elsif GNATprove_Mode
         and then SPARK_Mode = On
         and then Is_Overloadable (Nam)
         and then not Inside_A_Generic
@@ -8354,10 +8462,8 @@ package body Sem_Res is
          --  Why no similar processing for case expressions???
 
          elsif Ada_Version >= Ada_2012
-           and then Ekind_In (Etype (L), E_Anonymous_Access_Type,
-                                         E_Anonymous_Access_Subprogram_Type)
-           and then Ekind_In (Etype (R), E_Anonymous_Access_Type,
-                                         E_Anonymous_Access_Subprogram_Type)
+           and then Is_Anonymous_Access_Type (Etype (L))
+           and then Is_Anonymous_Access_Type (Etype (R))
          then
             Check_If_Expression (L);
             Check_If_Expression (R);
@@ -10055,10 +10161,12 @@ package body Sem_Res is
 
       --  If the target type is unconstrained, then we reset the type of the
       --  result from the type of the expression. For other cases, the actual
-      --  subtype of the expression is the target type.
+      --  subtype of the expression is the target type. But we avoid doing it
+      --  for an allocator since this is not needed and might be problematic.
 
       if Is_Composite_Type (Target_Typ)
         and then not Is_Constrained (Target_Typ)
+        and then Nkind (Parent (N)) /= N_Allocator
       then
          Set_Etype (N, Etype (Expr));
       end if;
@@ -10084,7 +10192,7 @@ package body Sem_Res is
 
       if Has_Predicates (Target_Typ) then
          Check_Expression_Against_Static_Predicate
-           (N, Target_Typ, Static_Failure_Is_Error => True);
+           (Expr, Target_Typ, Static_Failure_Is_Error => True);
       end if;
    end Resolve_Qualified_Expression;
 
@@ -10628,7 +10736,7 @@ package body Sem_Res is
             --  Set Comes_From_Source on L to preserve warnings for unset
             --  reference.
 
-            Set_Comes_From_Source (L, Comes_From_Source (Reloc_L));
+            Preserve_Comes_From_Source (L, Reloc_L);
          end;
       end if;
 
@@ -11881,6 +11989,18 @@ package body Sem_Res is
       --  Resolve operand using its own type
 
       Resolve (Operand, Opnd_Type);
+
+      --  If the expression is a conversion to universal integer of an
+      --  an expression with an integer type, then we can eliminate the
+      --  intermediate conversion to universal integer.
+
+      if Nkind (Operand) = N_Type_Conversion
+        and then Entity (Subtype_Mark (Operand)) = Universal_Integer
+        and then Is_Integer_Type (Etype (Expression (Operand)))
+      then
+         Rewrite (Operand, Relocate_Node (Expression (Operand)));
+         Analyze_And_Resolve (Operand);
+      end if;
 
       --  In an inlined context, the unchecked conversion may be applied
       --  to a literal, in which case its type is the type of the context.
@@ -13199,16 +13319,17 @@ package body Sem_Res is
                      return False;
 
                   --  Implicit conversions aren't allowed for anonymous access
-                  --  parameters. The "not Is_Local_Anonymous_Access_Type" test
-                  --  is done to exclude anonymous access results.
+                  --  parameters. We exclude anonymous access results as well
+                  --  as universal_access "=".
 
                   elsif not Is_Local_Anonymous_Access (Opnd_Type)
                     and then Nkind_In (Associated_Node_For_Itype (Opnd_Type),
                                        N_Function_Specification,
                                        N_Procedure_Specification)
+                    and then not Nkind_In (Parent (N), N_Op_Eq, N_Op_Ne)
                   then
                      Conversion_Error_N
-                       ("implicit conversion of anonymous access formal "
+                       ("implicit conversion of anonymous access parameter "
                         & "not allowed", Operand);
                      return False;
 
@@ -13227,7 +13348,7 @@ package body Sem_Res is
                   --  implicit conversion is disallowed (by RM12-8.6(27.1/3)).
 
                   elsif Type_Access_Level (Opnd_Type) >
-                        Deepest_Type_Access_Level (Target_Type)
+                    Deepest_Type_Access_Level (Target_Type)
                   then
                      Conversion_Error_N
                        ("implicit conversion of anonymous access value "

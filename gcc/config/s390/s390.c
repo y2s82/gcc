@@ -7853,15 +7853,13 @@ print_operand (FILE *file, rtx x, int code)
   switch (code)
     {
     case 'A':
-#ifdef HAVE_AS_VECTOR_LOADSTORE_ALIGNMENT_HINTS
-      if (TARGET_Z13 && MEM_P (x))
+      if (TARGET_VECTOR_LOADSTORE_ALIGNMENT_HINTS && MEM_P (x))
 	{
 	  if (MEM_ALIGN (x) >= 128)
 	    fprintf (file, ",4");
 	  else if (MEM_ALIGN (x) == 64)
 	    fprintf (file, ",3");
 	}
-#endif
       return;
     case 'C':
       fprintf (file, s390_branch_condition_mnemonic (x, FALSE));
@@ -13959,8 +13957,13 @@ s390_fix_long_loop_prediction (rtx_insn *insn)
   int distance;
 
   /* This will exclude branch on count and branch on index patterns
-     since these are correctly statically predicted.  */
-  if (!set
+     since these are correctly statically predicted.
+
+     The additional check for a PARALLEL is required here since
+     single_set might be != NULL for PARALLELs where the set of the
+     iteration variable is dead.  */
+  if (GET_CODE (PATTERN (insn)) == PARALLEL
+      || !set
       || SET_DEST (set) != pc_rtx
       || GET_CODE (SET_SRC(set)) != IF_THEN_ELSE)
     return false;

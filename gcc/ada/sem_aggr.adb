@@ -976,7 +976,8 @@ package body Sem_Aggr is
                                            N_Extension_Aggregate,
                                            N_Component_Association,
                                            N_Case_Expression_Alternative,
-                                           N_If_Expression))
+                                           N_If_Expression,
+                                           N_Expression_With_Actions))
             then
                Aggr_Resolved :=
                  Resolve_Array_Aggregate
@@ -2761,9 +2762,9 @@ package body Sem_Aggr is
       --  part, verify that it is within the same variant as that of previous
       --  specified variant components of the delta.
 
-      function Get_Component_Type (Nam : Node_Id) return Entity_Id;
-      --  Locate component with a given name and return its type. If none found
-      --  report error.
+      function Get_Component (Nam : Node_Id) return Entity_Id;
+      --  Locate component with a given name and return it. If none found then
+      --  report error and return Empty.
 
       function Nested_In (V1 : Node_Id; V2 : Node_Id) return Boolean;
       --  Determine whether variant V1 is within variant V2
@@ -2827,11 +2828,11 @@ package body Sem_Aggr is
          end if;
       end Check_Variant;
 
-      ------------------------
-      -- Get_Component_Type --
-      ------------------------
+      -------------------
+      -- Get_Component --
+      -------------------
 
-      function Get_Component_Type (Nam : Node_Id) return Entity_Id is
+      function Get_Component (Nam : Node_Id) return Entity_Id is
          Comp : Entity_Id;
 
       begin
@@ -2842,15 +2843,15 @@ package body Sem_Aggr is
                   Error_Msg_N ("delta cannot apply to discriminant", Nam);
                end if;
 
-               return Etype (Comp);
+               return Comp;
             end if;
 
             Next_Entity (Comp);
          end loop;
 
          Error_Msg_NE ("type& has no component with this name", Nam, Typ);
-         return Any_Type;
-      end Get_Component_Type;
+         return Empty;
+      end Get_Component;
 
       ---------------
       -- Nested_In --
@@ -2897,6 +2898,7 @@ package body Sem_Aggr is
 
       Assoc     : Node_Id;
       Choice    : Node_Id;
+      Comp      : Entity_Id;
       Comp_Type : Entity_Id := Empty; -- init to avoid warning
 
    --  Start of processing for Resolve_Delta_Record_Aggregate
@@ -2908,10 +2910,21 @@ package body Sem_Aggr is
       while Present (Assoc) loop
          Choice := First (Choice_List (Assoc));
          while Present (Choice) loop
-            Comp_Type := Get_Component_Type (Choice);
+            Comp := Get_Component (Choice);
 
-            if Comp_Type /= Any_Type then
+            if Present (Comp) then
                Check_Variant (Choice);
+
+               Comp_Type := Etype (Comp);
+
+               --  Decorate the component reference by setting its entity and
+               --  type, as otherwise backends like GNATprove would have to
+               --  rediscover this information by themselves.
+
+               Set_Entity (Choice, Comp);
+               Set_Etype  (Choice, Comp_Type);
+            else
+               Comp_Type := Any_Type;
             end if;
 
             Next (Choice);
@@ -3084,14 +3097,12 @@ package body Sem_Aggr is
       Analyze (A);
       Check_Parameterless_Call (A);
 
-      --  In SPARK, the ancestor part cannot be a type mark
-
       if Is_Entity_Name (A) and then Is_Type (Entity (A)) then
 
          --  AI05-0115: if the ancestor part is a subtype mark, the ancestor
          --  must not have unknown discriminants.
 
-         if Has_Unknown_Discriminants (Root_Type (Typ)) then
+         if Has_Unknown_Discriminants (Entity (A)) then
             Error_Msg_NE
               ("aggregate not available for type& whose ancestor "
                  & "has unknown discriminants", N, Typ);
@@ -4291,6 +4302,10 @@ package body Sem_Aggr is
 
          --  AI05-0115: if the ancestor part is a subtype mark, the ancestor
          --  must not have unknown discriminants.
+         --  ??? We are not checking any subtype mark here and this code is not
+         --  exercised by any test, so it's likely wrong (in particular
+         --  we should not use Root_Type here but the subtype mark, if any),
+         --  and possibly not needed.
 
          if Is_Derived_Type (Typ)
            and then Has_Unknown_Discriminants (Root_Type (Typ))

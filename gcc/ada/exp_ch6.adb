@@ -78,6 +78,15 @@ with Validsw;   use Validsw;
 
 package body Exp_Ch6 is
 
+   --  Suffix for BIP formals
+
+   BIP_Alloc_Suffix               : constant String := "BIPalloc";
+   BIP_Storage_Pool_Suffix        : constant String := "BIPstoragepool";
+   BIP_Finalization_Master_Suffix : constant String := "BIPfinalizationmaster";
+   BIP_Task_Master_Suffix         : constant String := "BIPtaskmaster";
+   BIP_Activation_Chain_Suffix    : constant String := "BIPactivationchain";
+   BIP_Object_Access_Suffix       : constant String := "BIPaccess";
+
    -----------------------
    -- Local Subprograms --
    -----------------------
@@ -155,6 +164,12 @@ package body Exp_Ch6 is
    --  depends on discriminants). In particular, untagged types with only
    --  access discriminants do not require secondary stack use. Note we must
    --  always use the secondary stack for dispatching-on-result calls.
+
+   function Check_BIP_Actuals
+     (Subp_Call : Node_Id;
+      Subp_Id   : Entity_Id) return Boolean;
+   --  Given a subprogram call to the given subprogram return True if the
+   --  names of BIP extra actual and formal parameters match.
 
    function Check_Number_Of_Actuals
      (Subp_Call : Node_Id;
@@ -253,6 +268,15 @@ package body Exp_Ch6 is
    procedure Expand_Simple_Function_Return (N : Node_Id);
    --  Expand simple return from function. In the case where we are returning
    --  from a function body this is called by Expand_N_Simple_Return_Statement.
+
+   function Has_BIP_Extra_Formal
+     (E    : Entity_Id;
+      Kind : BIP_Formal_Kind) return Boolean;
+   --  Given a frozen subprogram, subprogram type, entry or entry family,
+   --  return True if E has the BIP extra formal associated with Kind. It must
+   --  be invoked with a frozen entity or a subprogram type of a dispatching
+   --  call since we can only rely on the availability of the extra formals
+   --  on these entities.
 
    procedure Insert_Post_Call_Actions (N : Node_Id; Post_Call : List_Id);
    --  Insert the Post_Call list previously produced by routine Expand_Actuals
@@ -737,24 +761,67 @@ package body Exp_Ch6 is
    begin
       case Kind is
          when BIP_Alloc_Form =>
-            return "BIPalloc";
+            return BIP_Alloc_Suffix;
 
          when BIP_Storage_Pool =>
-            return "BIPstoragepool";
+            return BIP_Storage_Pool_Suffix;
 
          when BIP_Finalization_Master =>
-            return "BIPfinalizationmaster";
+            return BIP_Finalization_Master_Suffix;
 
          when BIP_Task_Master =>
-            return "BIPtaskmaster";
+            return BIP_Task_Master_Suffix;
 
          when BIP_Activation_Chain =>
-            return "BIPactivationchain";
+            return BIP_Activation_Chain_Suffix;
 
          when BIP_Object_Access =>
-            return "BIPaccess";
+            return BIP_Object_Access_Suffix;
       end case;
    end BIP_Formal_Suffix;
+
+   ---------------------
+   -- BIP_Suffix_Kind --
+   ---------------------
+
+   function BIP_Suffix_Kind (E : Entity_Id) return BIP_Formal_Kind is
+      Nam : constant String := Get_Name_String (Chars (E));
+
+      function Has_Suffix (Suffix : String) return Boolean;
+      --  Return True if Nam has suffix Suffix
+
+      function Has_Suffix (Suffix : String) return Boolean is
+         Len : constant Natural := Suffix'Length;
+      begin
+         return Nam'Length > Len
+           and then Nam (Nam'Last - Len + 1 .. Nam'Last) = Suffix;
+      end Has_Suffix;
+
+   --  Start of processing for BIP_Suffix_Kind
+
+   begin
+      if Has_Suffix (BIP_Alloc_Suffix) then
+         return BIP_Alloc_Form;
+
+      elsif Has_Suffix (BIP_Storage_Pool_Suffix) then
+         return BIP_Storage_Pool;
+
+      elsif Has_Suffix (BIP_Finalization_Master_Suffix) then
+         return BIP_Finalization_Master;
+
+      elsif Has_Suffix (BIP_Task_Master_Suffix) then
+         return BIP_Task_Master;
+
+      elsif Has_Suffix (BIP_Activation_Chain_Suffix) then
+         return BIP_Activation_Chain;
+
+      elsif Has_Suffix (BIP_Object_Access_Suffix) then
+         return BIP_Object_Access;
+
+      else
+         raise Program_Error;
+      end if;
+   end BIP_Suffix_Kind;
 
    ---------------------------
    -- Build_In_Place_Formal --
@@ -764,8 +831,8 @@ package body Exp_Ch6 is
      (Func : Entity_Id;
       Kind : BIP_Formal_Kind) return Entity_Id
    is
+      Extra_Formal  : Entity_Id := Extra_Formals (Func);
       Formal_Suffix : constant String := BIP_Formal_Suffix (Kind);
-      Extra_Formal : Entity_Id := Extra_Formals (Func);
 
    begin
       --  Maybe it would be better for each implicit formal of a build-in-place
@@ -986,6 +1053,42 @@ package body Exp_Ch6 is
             and then No (Controlling_Argument (Func_Call)))
         or else not Requires_Transient_Scope (Underlying_Type (Result_Subt));
    end Caller_Known_Size;
+
+   -----------------------
+   -- Check_BIP_Actuals --
+   -----------------------
+
+   function Check_BIP_Actuals
+     (Subp_Call : Node_Id;
+      Subp_Id   : Entity_Id) return Boolean
+   is
+      Formal : Entity_Id;
+      Actual : Node_Id;
+
+   begin
+      pragma Assert (Nkind_In (Subp_Call, N_Entry_Call_Statement,
+                                          N_Function_Call,
+                                          N_Procedure_Call_Statement));
+
+      Formal := First_Formal_With_Extras (Subp_Id);
+      Actual := First_Actual (Subp_Call);
+
+      while Present (Formal) and then Present (Actual) loop
+         if Is_Build_In_Place_Entity (Formal)
+           and then Nkind (Actual) = N_Identifier
+           and then Is_Build_In_Place_Entity (Entity (Actual))
+           and then BIP_Suffix_Kind (Formal)
+                      /= BIP_Suffix_Kind (Entity (Actual))
+         then
+            return False;
+         end if;
+
+         Next_Formal_With_Extras (Formal);
+         Next_Actual (Actual);
+      end loop;
+
+      return No (Formal) and then No (Actual);
+   end Check_BIP_Actuals;
 
    -----------------------------
    -- Check_Number_Of_Actuals --
@@ -2160,13 +2263,18 @@ package body Exp_Ch6 is
 
             --  Ada 2005 (AI-318-02): If the actual parameter is a call to a
             --  build-in-place function, then a temporary return object needs
-            --  to be created and access to it must be passed to the function.
+            --  to be created and access to it must be passed to the function
+            --  (and ensure that we have an activation chain defined for tasks
+            --  and a Master variable).
+
             --  Currently we limit such functions to those with inherently
             --  limited result subtypes, but eventually we plan to expand the
             --  functions that are treated as build-in-place to include other
             --  composite result types.
 
             if Is_Build_In_Place_Function_Call (Actual) then
+               Build_Activation_Chain_Entity (N);
+               Build_Master_Entity (Etype (Actual));
                Make_Build_In_Place_Call_In_Anonymous_Context (Actual);
 
             --  Ada 2005 (AI-318-02): Specialization of the previous case for
@@ -2174,6 +2282,8 @@ package body Exp_Ch6 is
             --  object covers interface types.
 
             elsif Present (Unqual_BIP_Iface_Function_Call (Actual)) then
+               Build_Activation_Chain_Entity (N);
+               Build_Master_Entity (Etype (Actual));
                Make_Build_In_Place_Iface_Call_In_Anonymous_Context (Actual);
             end if;
 
@@ -3359,6 +3469,8 @@ package body Exp_Ch6 is
 
             Expand_Actuals (Call_Node, Subp, Post_Call);
             pragma Assert (Is_Empty_List (Post_Call));
+            pragma Assert (Check_Number_Of_Actuals (Call_Node, Subp));
+            pragma Assert (Check_BIP_Actuals (Call_Node, Subp));
             return;
          end;
       end if;
@@ -3496,6 +3608,21 @@ package body Exp_Ch6 is
             elsif Is_Entity_Name (Actual)
               and then Is_Formal (Entity (Actual))
               and then In_Open_Scopes (Scope (Entity (Actual)))
+            then
+               Prev_Orig := Prev;
+
+            --  If the actual is an attribute reference that was expanded
+            --  into a reference to an entity, then get accessibility level
+            --  from that entity. AARM 6.1.1(27.d) says "... the implicit
+            --  constant declaration defines the accessibility level of X'Old".
+
+            elsif Nkind (Prev_Orig) = N_Attribute_Reference
+              and then Nam_In (Attribute_Name (Prev_Orig),
+                               Name_Old,
+                               Name_Loop_Entry)
+              and then Is_Entity_Name (Prev)
+              and then Present (Entity (Prev))
+              and then Is_Object (Entity (Prev))
             then
                Prev_Orig := Prev;
 
@@ -4548,9 +4675,8 @@ package body Exp_Ch6 is
 
                procedure Convert (Act : Node_Id; Typ : Entity_Id) is
                begin
-                  Rewrite (Act, OK_Convert_To (Typ, Relocate_Node (Act)));
-                  Analyze (Act);
-                  Resolve (Act, Typ);
+                  Rewrite (Act, OK_Convert_To (Typ, Act));
+                  Analyze_And_Resolve (Act, Typ);
                end Convert;
 
                --  Local variables
@@ -4568,8 +4694,8 @@ package body Exp_Ch6 is
                   Formal_Typ := Etype (Formal);
                   Parent_Typ := Etype (Parent_Formal);
 
-                  --  For an IN parameter of a scalar type, the parent formal
-                  --  type and derived formal type differ or the parent formal
+                  --  For an IN parameter of a scalar type, the derived formal
+                  --  type and parent formal type differ, and the parent formal
                   --  type and actual type do not match statically.
 
                   if Is_Scalar_Type (Formal_Typ)
@@ -4580,15 +4706,6 @@ package body Exp_Ch6 is
                     and then not Raises_Constraint_Error (Actual)
                   then
                      Convert (Actual, Parent_Typ);
-                     Enable_Range_Check (Actual);
-
-                     --  If the actual has been marked as requiring a range
-                     --  check, then generate it here.
-
-                     if Do_Range_Check (Actual) then
-                        Generate_Range_Check
-                          (Actual, Etype (Formal), CE_Range_Check_Failed);
-                     end if;
 
                   --  For access types, the parent formal type and actual type
                   --  differ.
@@ -4610,10 +4727,8 @@ package body Exp_Ch6 is
                         --  inlined.
 
                         Rewrite (Actual,
-                          Unchecked_Convert_To (Parent_Typ,
-                            Relocate_Node (Actual)));
-                        Analyze (Actual);
-                        Resolve (Actual, Parent_Typ);
+                          Unchecked_Convert_To (Parent_Typ, Actual));
+                        Analyze_And_Resolve (Actual, Parent_Typ);
                      end if;
 
                   --  If there is a change of representation, then generate a
@@ -6345,6 +6460,19 @@ package body Exp_Ch6 is
                    Name =>
                      New_Occurrence_Of (Postconditions_Proc (Spec_Id), Loc)));
             end if;
+
+            --  Ada 2020 (AI12-0279): append the call to 'Yield unless this is
+            --  a generic subprogram (since in such case it will be added to
+            --  the instantiations).
+
+            if Has_Yield_Aspect (Spec_Id)
+              and then Ekind (Spec_Id) /= E_Generic_Procedure
+              and then RTE_Available (RE_Yield)
+            then
+               Insert_Action (Stmt,
+                 Make_Procedure_Call_Statement (Loc,
+                   New_Occurrence_Of (RTE (RE_Yield), Loc)));
+            end if;
          end if;
       end Add_Return;
 
@@ -6778,6 +6906,16 @@ package body Exp_Ch6 is
              Name => New_Occurrence_Of (Postconditions_Proc (Scope_Id), Loc)));
       end if;
 
+      --  Ada 2020 (AI12-0279)
+
+      if Has_Yield_Aspect (Scope_Id)
+        and then RTE_Available (RE_Yield)
+      then
+         Insert_Action (N,
+           Make_Procedure_Call_Statement (Loc,
+             New_Occurrence_Of (RTE (RE_Yield), Loc)));
+      end if;
+
       --  If it is a return from a procedure do no extra steps
 
       if Kind = E_Procedure or else Kind = E_Generic_Procedure then
@@ -7175,9 +7313,33 @@ package body Exp_Ch6 is
                  Reason => PE_Accessibility_Check_Failed));
       end Check_Against_Result_Level;
 
+      --  Local Data
+
+      New_Copy_Of_Exp : Node_Id := Empty;
+
    --  Start of processing for Expand_Simple_Function_Return
 
    begin
+      --  For static expression functions, the expression of the function
+      --  needs to be available in a form that can be replicated later for
+      --  calls, but rewriting of the return expression in the body created
+      --  for expression functions will cause the original expression to no
+      --  longer be properly copyable via New_Copy_Tree, because the Parent
+      --  fields of the nodes will now point to nodes in the rewritten tree,
+      --  and New_Copy_Tree won't copy the deeper nodes of the original tree.
+      --  So we work around that by making a copy of the expression tree
+      --  before any rewriting occurs, and replacing the original expression
+      --  tree with this copy (see the end of this procedure). We also reset
+      --  the Analyzed flags on the nodes in the tree copy to ensure that
+      --  later copies of the tree will be fully reanalyzed. This copying
+      --  is of course rather inelegant, to say the least, and it would be
+      --  nice if there were a way to avoid it. ???
+
+      if Is_Static_Expression_Function (Scope_Id) then
+         New_Copy_Of_Exp := New_Copy_Tree (Exp);
+         Reset_Analyzed_Flags (New_Copy_Of_Exp);
+      end if;
+
       if Is_Class_Wide_Type (R_Type)
         and then not Is_Class_Wide_Type (Exp_Typ)
         and then Nkind (Exp) /= N_Type_Conversion
@@ -7888,6 +8050,31 @@ package body Exp_Ch6 is
          Rewrite (Exp, Convert_To (Utyp, Relocate_Node (Exp)));
          Analyze_And_Resolve (Exp);
       end if;
+
+      --  If a new copy of a static expression function's expression was made
+      --  (see the beginning of this procedure's statement part), then we now
+      --  replace the original expression tree with the copy and also change
+      --  the Original_Node field of the rewritten expression to point to that
+      --  copy. It would be nice to find a way to avoid this???
+
+      if Present (New_Copy_Of_Exp) then
+         Set_Expression
+           (Original_Node (Subprogram_Spec (Scope_Id)), New_Copy_Of_Exp);
+
+         if Exp /= Original_Node (Exp) then
+            Set_Original_Node (Exp, New_Copy_Of_Exp);
+         end if;
+      end if;
+
+      --  Ada 2020 (AI12-0279)
+
+      if Has_Yield_Aspect (Scope_Id)
+        and then RTE_Available (RE_Yield)
+      then
+         Insert_Action (N,
+           Make_Procedure_Call_Statement (Loc,
+             New_Occurrence_Of (RTE (RE_Yield), Loc)));
+      end if;
    end Expand_Simple_Function_Return;
 
    -----------------------
@@ -8081,6 +8268,41 @@ package body Exp_Ch6 is
          Analyze_Entry_Or_Subprogram_Contract (Subp);
       end if;
    end Freeze_Subprogram;
+
+   --------------------------
+   -- Has_BIP_Extra_Formal --
+   --------------------------
+
+   function Has_BIP_Extra_Formal
+     (E    : Entity_Id;
+      Kind : BIP_Formal_Kind) return Boolean
+   is
+      Extra_Formal : Entity_Id := Extra_Formals (E);
+
+   begin
+      --  We can only rely on the availability of the extra formals in frozen
+      --  entities or in subprogram types of dispatching calls (since their
+      --  extra formals are added when the target subprogram is frozen; see
+      --  Expand_Dispatching_Call).
+
+      pragma Assert (Is_Frozen (E)
+        or else (Ekind (E) = E_Subprogram_Type
+                   and then Is_Dispatch_Table_Entity (E))
+        or else (Is_Dispatching_Operation (E)
+                   and then Is_Frozen (Find_Dispatching_Type (E))));
+
+      while Present (Extra_Formal) loop
+         if Is_Build_In_Place_Entity (Extra_Formal)
+           and then BIP_Suffix_Kind (Extra_Formal) = Kind
+         then
+            return True;
+         end if;
+
+         Next_Formal_With_Extras (Extra_Formal);
+      end loop;
+
+      return False;
+   end Has_BIP_Extra_Formal;
 
    ------------------------------
    -- Insert_Post_Call_Actions --
@@ -8290,6 +8512,34 @@ package body Exp_Ch6 is
          end;
       end if;
    end Is_Build_In_Place_Result_Type;
+
+   ------------------------------
+   -- Is_Build_In_Place_Entity --
+   ------------------------------
+
+   function Is_Build_In_Place_Entity (E : Entity_Id) return Boolean is
+      Nam : constant String := Get_Name_String (Chars (E));
+
+      function Has_Suffix (Suffix : String) return Boolean;
+      --  Return True if Nam has suffix Suffix
+
+      function Has_Suffix (Suffix : String) return Boolean is
+         Len : constant Natural := Suffix'Length;
+      begin
+         return Nam'Length > Len
+           and then Nam (Nam'Last - Len + 1 .. Nam'Last) = Suffix;
+      end Has_Suffix;
+
+   --  Start of processing for Is_Build_In_Place_Entity
+
+   begin
+      return Has_Suffix (BIP_Alloc_Suffix)
+        or else Has_Suffix (BIP_Storage_Pool_Suffix)
+        or else Has_Suffix (BIP_Finalization_Master_Suffix)
+        or else Has_Suffix (BIP_Task_Master_Suffix)
+        or else Has_Suffix (BIP_Activation_Chain_Suffix)
+        or else Has_Suffix (BIP_Object_Access_Suffix);
+   end Is_Build_In_Place_Entity;
 
    --------------------------------
    -- Is_Build_In_Place_Function --
@@ -8699,6 +8949,7 @@ package body Exp_Ch6 is
 
       Analyze_And_Resolve (Allocator, Acc_Type);
       pragma Assert (Check_Number_Of_Actuals (Func_Call, Function_Id));
+      pragma Assert (Check_BIP_Actuals (Func_Call, Function_Id));
    end Make_Build_In_Place_Call_In_Allocator;
 
    ---------------------------------------------------
@@ -8821,6 +9072,7 @@ package body Exp_Ch6 is
            (Func_Call, Function_Id, New_Occurrence_Of (Return_Obj_Id, Loc));
 
          pragma Assert (Check_Number_Of_Actuals (Func_Call, Function_Id));
+         pragma Assert (Check_BIP_Actuals (Func_Call, Function_Id));
 
       --  When the result subtype is unconstrained, the function must allocate
       --  the return object in the secondary stack, so appropriate implicit
@@ -8847,6 +9099,7 @@ package body Exp_Ch6 is
            (Func_Call, Function_Id, Empty);
 
          pragma Assert (Check_Number_Of_Actuals (Func_Call, Function_Id));
+         pragma Assert (Check_BIP_Actuals (Func_Call, Function_Id));
       end if;
    end Make_Build_In_Place_Call_In_Anonymous_Context;
 
@@ -8953,6 +9206,7 @@ package body Exp_Ch6 is
 
       Rewrite (Assign, Make_Null_Statement (Loc));
       pragma Assert (Check_Number_Of_Actuals (Func_Call, Func_Id));
+      pragma Assert (Check_BIP_Actuals (Func_Call, Func_Id));
    end Make_Build_In_Place_Call_In_Assignment;
 
    ----------------------------------------------------
@@ -9396,6 +9650,7 @@ package body Exp_Ch6 is
       end if;
 
       pragma Assert (Check_Number_Of_Actuals (Func_Call, Function_Id));
+      pragma Assert (Check_BIP_Actuals (Func_Call, Function_Id));
    end Make_Build_In_Place_Call_In_Object_Declaration;
 
    -------------------------------------------------
@@ -9686,10 +9941,58 @@ package body Exp_Ch6 is
 
    function Needs_BIP_Task_Actuals (Func_Id : Entity_Id) return Boolean is
       pragma Assert (Is_Build_In_Place_Function (Func_Id));
-      Func_Typ : constant Entity_Id := Underlying_Type (Etype (Func_Id));
+      Subp_Id  : Entity_Id;
+      Func_Typ : Entity_Id;
+
    begin
-      return not Global_No_Tasking
-        and then (Has_Task (Func_Typ) or else Might_Have_Tasks (Func_Typ));
+      if Global_No_Tasking or else No_Run_Time_Mode then
+         return False;
+      end if;
+
+      --  For thunks we must rely on their target entity; otherwise, given that
+      --  the profile of thunks for functions returning a limited interface
+      --  type returns a class-wide type, we would erroneously add these extra
+      --  formals.
+
+      if Is_Thunk (Func_Id) then
+         Subp_Id := Thunk_Entity (Func_Id);
+
+      --  Common case
+
+      else
+         Subp_Id := Func_Id;
+      end if;
+
+      Func_Typ := Underlying_Type (Etype (Subp_Id));
+
+      --  At first sight, for all the following cases, we could add assertions
+      --  to ensure that if Func_Id is frozen then the computed result matches
+      --  with the availability of the task master extra formal; unfortunately
+      --  this is not feasible because we may be precisely freezing this entity
+      --  (ie. Is_Frozen has been set by Freeze_Entity but it has not completed
+      --  its work).
+
+      if Has_Task (Func_Typ) then
+         return True;
+
+      elsif Ekind (Func_Id) = E_Function then
+         return Might_Have_Tasks (Func_Typ);
+
+      --  Handle subprogram type internally generated for dispatching call. We
+      --  can not rely on the return type of the subprogram type of dispatching
+      --  calls since it is always a class-wide type (cf. Expand_Dispatching_
+      --  _Call).
+
+      elsif Ekind (Func_Id) = E_Subprogram_Type then
+         if Is_Dispatch_Table_Entity (Func_Id) then
+            return Has_BIP_Extra_Formal (Func_Id, BIP_Task_Master);
+         else
+            return Might_Have_Tasks (Func_Typ);
+         end if;
+
+      else
+         raise Program_Error;
+      end if;
    end Needs_BIP_Task_Actuals;
 
    -----------------------------------

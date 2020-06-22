@@ -93,8 +93,8 @@ Attribute Bit
 ``obj'Bit``, where ``obj`` is any object, yields the bit
 offset within the storage unit (byte) that contains the first bit of
 storage allocated for the object.  The value of this attribute is of the
-type *universal_integer*, and is always a non-negative number not
-exceeding the value of ``System.Storage_Unit``.
+type *universal_integer* and is always a nonnegative number smaller
+than ``System.Storage_Unit``.
 
 For an object that is a variable or a constant allocated in a register,
 the value is zero.  (The use of this attribute does not force the
@@ -241,14 +241,16 @@ the first element of the array.
 
 .. code-block:: ada
 
-  type Unconstr_Array is array (Positive range <>) of Boolean;
+  type Unconstr_Array is array (Short_Short_Integer range <>) of Positive;
   Put_Line ("Descriptor size = " & Unconstr_Array'Descriptor_Size'Img);
 
 
-The attribute takes into account any additional padding due to type alignment.
-In the example above, the descriptor contains two values of type
-``Positive`` representing the low and high bound.  Since ``Positive`` has
-a size of 31 bits and an alignment of 4, the descriptor size is ``2 * Positive'Size + 2`` or 64 bits.
+The attribute takes into account any padding due to the alignment of the
+component type. In the example above, the descriptor contains two values
+of type ``Short_Short_Integer`` representing the low and high bound. But,
+since ``Positive`` has an alignment of 4, the size of the descriptor is
+``2 * Short_Short_Integer'Size`` rounded up to the next multiple of 32,
+which yields a size of 32 bits, i.e. including 16 bits of padding.
 
 Attribute Elaborated
 ====================
@@ -508,6 +510,13 @@ Note that technically, in analogy to ``Image``,
 that returns the appropriate string when called. This means that
 ``X'Img`` can be renamed as a function-returning-string, or used
 in an instantiation as a function parameter.
+
+Attribute Initialized
+=====================
+.. index:: Initialized
+
+For the syntax and semantics of this attribute, see the SPARK 2014 Reference
+Manual, section 6.10.
 
 Attribute Integer_Value
 =======================
@@ -1614,4 +1623,3 @@ Attribute Word_Size
 ``Standard'Word_Size`` (``Standard`` is the only permissible
 prefix) provides the value ``System.Word_Size``. The result is
 a static constant.
-

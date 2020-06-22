@@ -1,3 +1,126 @@
+2020-06-21  David Edelsohn  <dje.gcc@gmail.com>
+
+	* Makefile.am (tmake_file): Build and install AIX-style FAT libraries.
+	* Makefile.in: Regenerate.
+	* configure.ac (tmake_file): Substitute.
+	* configure: Regenerate.
+	* configure.host (aix*): Define tmake_file.
+	* config/os/aix/t-aix: New file.
+
+2020-06-20  Jason Merrill  <jason@redhat.com>
+
+	* testsuite/24_iterators/move_iterator/rel_ops_c++20.cc:
+	Remove greedy_ops tests.
+	* testsuite/24_iterators/reverse_iterator/rel_ops_c++20.cc:
+	Remove greedy_ops tests.
+
+2020-06-19  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/95765
+	* include/bits/stl_algobase.h (__size_to_integer(float))
+	(__size_to_integer(double), __size_to_integer(long double))
+	(__size_to_integer(__float128)): Cast return type explicitly.
+	* include/bits/stl_uninitialized.h (__uninitialized_default_1<true>):
+	Remove unused typedef.
+
+2020-06-19  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/bits/stl_pair.h (_Index_tuple): Remove redundant
+	namespace qualification.
+	(pair::pair(tuple<>&, tuple<>&, _Index_tuple, _Index_tuple)):
+	Likewise.
+	* include/std/tuple (_Head_base, _Tuple_impl, tuple_size)
+	(tuple_element, __get_helper, get, __make_tuple_impl)
+	(__make_1st_indices, __tuple_concater)
+	(pair::pair(tuple<>&, tuple<>&, _Index_tuple, _Index_tuple)):
+	Likewise.
+	* include/std/utility (tuple_element, __is_tuple_like_impl)
+	(tuple_size, __pair_get, get): Likewise.
+
+2020-06-19  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/bits/std_function.h (function): Define all member
+	functions inline.
+
+2020-06-19  Marc Glisse  <marc.glisse@inria.fr>
+
+	* include/bits/stl_algo.h (__includes): Simplify the code.
+
+2020-06-19  Marc Glisse  <marc.glisse@inria.fr>
+
+	* include/std/optional (optional()): Explicitly define it.
+
+2020-06-17  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/94540
+	* include/bits/stl_uninitialized.h (__uninitialized_default_1<true>):
+	Construct the first value at *__first instead of on the stack.
+	(__uninitialized_default_n_1<true>): Likewise.
+	Improve comments on several of the non-standard algorithms.
+	* testsuite/20_util/specialized_algorithms/uninitialized_default/94540.cc:
+	New test.
+	* testsuite/20_util/specialized_algorithms/uninitialized_default_n/94540.cc:
+	New test.
+	* testsuite/20_util/specialized_algorithms/uninitialized_value_construct/94540.cc:
+	New test.
+	* testsuite/20_util/specialized_algorithms/uninitialized_value_construct_n/94540.cc:
+	New test.
+	* testsuite/23_containers/vector/cons/94540.cc: New test.
+
+2020-06-17  Jonathan Wakely  <jwakely@redhat.com>
+
+	* testsuite/20_util/specialized_algorithms/uninitialized_default_n/sizes.cc:
+	Replace Value type with int so trivial code path is used.
+	* testsuite/20_util/specialized_algorithms/uninitialized_value_construct_n/sizes.cc:
+	Likewise.
+
+2020-06-17  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/bits/stl_uninitialized.h (uninitialized_fill_n): Only
+	use std::fill_n when the size is an integral type.
+	(__uninitialized_default_n): Likewise.
+	* testsuite/20_util/specialized_algorithms/uninitialized_default_n/sizes.cc:
+	New test.
+	* testsuite/20_util/specialized_algorithms/uninitialized_fill_n/sizes.cc:
+	New test.
+	* testsuite/20_util/specialized_algorithms/uninitialized_value_construct_n/sizes.cc:
+	New test.
+
+2020-06-16  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR libstdc++/95282
+	* include/bits/atomic_base.h (__atomic_impl::load): Use the _Val
+	alias instead of deducing _Tp as an unqualified type.
+	(__atomic_impl::exchange): Use the _Val alias to remove volatile
+	from the reinterpret_cast result type.
+
+2020-06-16  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/std/atomic (atomic): Add static assertions.
+	* testsuite/29_atomics/atomic/requirements/types_neg.cc: New test.
+
+2020-06-16  Patrick Palka  <ppalka@redhat.com>
+
+	PR libstdc++/94003
+	* testsuite/20_util/is_constructible/94003.cc: New test.
+
+2020-06-15  Jonathan Wakely  <jwakely@redhat.com>
+
+	* include/bits/char_traits.h (__cpp_lib_constexpr_char_traits):
+	Update value for C++20.
+	* include/std/version (__cpp_lib_constexpr_char_traits): Likewise.
+	* testsuite/21_strings/char_traits/requirements/constexpr_functions_c++17.cc:
+	Update expected value.
+	* testsuite/21_strings/char_traits/requirements/constexpr_functions_c++20.cc:
+	Likewise.
+
+2020-06-15  Paul Keir  <paul.keir@uws.ac.uk>
+
+	* include/bits/char_traits.h (char_traits::move): constexpr move with
+	overlap was using copy_backward incorrectly.
+	* testsuite/21_strings/char_traits/requirements/constexpr_functions_c++20.cc:
+	New test.
+
 2020-06-12  Jonathan Wakely  <jwakely@redhat.com>
 
 	* testsuite/29_atomics/atomic_flag/clear/1.cc: Also test clear()

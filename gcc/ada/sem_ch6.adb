@@ -32,6 +32,7 @@ with Einfo;     use Einfo;
 with Elists;    use Elists;
 with Errout;    use Errout;
 with Expander;  use Expander;
+with Exp_Ch3;   use Exp_Ch3;
 with Exp_Ch6;   use Exp_Ch6;
 with Exp_Ch7;   use Exp_Ch7;
 with Exp_Ch9;   use Exp_Ch9;
@@ -498,9 +499,14 @@ package body Sem_Ch6 is
          --  Within a generic preanalyze the original expression for name
          --  capture. The body is also generated but plays no role in
          --  this because it is not part of the original source.
+         --  If this is an ignored Ghost entity, analysis of the generated
+         --  body is needed to hide external references (as is done in
+         --  Analyze_Subprogram_Body) after which the the subprogram profile
+         --  can be frozen, which is needed to expand calls to such an ignored
+         --  Ghost subprogram.
 
          if Inside_A_Generic then
-            Set_Has_Completion (Def_Id);
+            Set_Has_Completion (Def_Id, not Is_Ignored_Ghost_Entity (Def_Id));
             Push_Scope (Def_Id);
             Install_Formals (Def_Id);
             Preanalyze_Spec_Expression (Expr, Etype (Def_Id));
@@ -551,6 +557,37 @@ package body Sem_Ch6 is
                   Preanalyze_Formal_Expression (Expr, Typ);
                   Check_Limited_Return (Original_Node (N), Expr, Typ);
                   End_Scope;
+               end if;
+
+               --  In the case of an expression function marked with the
+               --  aspect Static, we need to check the requirement that the
+               --  function's expression is a potentially static expression.
+               --  This is done by making a full copy of the expression tree
+               --  and performing a special preanalysis on that tree with
+               --  the global flag Checking_Potentially_Static_Expression
+               --  enabled. If the resulting expression is static, then it's
+               --  OK, but if not, that means the expression violates the
+               --  requirements of the Ada 202x RM in 4.9(3.2/5-3.4/5) and
+               --  we flag an error.
+
+               if Is_Static_Expression_Function (Def_Id) then
+                  if not Is_Static_Expression (Expr) then
+                     declare
+                        Exp_Copy : constant Node_Id := New_Copy_Tree (Expr);
+                     begin
+                        Set_Checking_Potentially_Static_Expression (True);
+
+                        Preanalyze_Formal_Expression (Exp_Copy, Typ);
+
+                        if not Is_Static_Expression (Exp_Copy) then
+                           Error_Msg_N
+                             ("static expression function requires "
+                                & "potentially static expression", Expr);
+                        end if;
+
+                        Set_Checking_Potentially_Static_Expression (False);
+                     end;
+                  end if;
                end if;
             end if;
          end;
@@ -1163,7 +1200,33 @@ package body Sem_Ch6 is
             --  object declaration.
 
             Set_Is_Return_Object (Defining_Identifier (Obj_Decl));
-            Analyze (Obj_Decl);
+
+            --  Returning a build-in-place unconstrained array type we defer
+            --  the full analysis of the returned object to avoid generating
+            --  the corresponding constrained subtype; otherwise the bounds
+            --  would be created in the stack and a dangling reference would
+            --  be returned pointing to the bounds. We perform its preanalysis
+            --  to report errors on the initializing aggregate now (if any);
+            --  we also ensure its activation chain and Master variable are
+            --  defined (if tasks are being declared) since they are generated
+            --  as part of the analysis and expansion of the object declaration
+            --  at this stage.
+
+            if Is_Array_Type (R_Type)
+              and then not Is_Constrained (R_Type)
+              and then Is_Build_In_Place_Function (Scope_Id)
+              and then Needs_BIP_Alloc_Form (Scope_Id)
+              and then Nkind_In (Expr, N_Aggregate, N_Extension_Aggregate)
+            then
+               Preanalyze (Obj_Decl);
+
+               if Expander_Active then
+                  Ensure_Activation_Chain_And_Master (Obj_Decl);
+               end if;
+
+            else
+               Analyze (Obj_Decl);
+            end if;
 
             Check_Return_Subtype_Indication (Obj_Decl);
 
@@ -1269,7 +1332,7 @@ package body Sem_Ch6 is
          --  only once, i.e. not to the simple return statement generated at
          --  the end of its expansion because, prior to leaving the function,
          --  the accessibility level of the return object changes to be a level
-         --  determined by the point of call (RM 3.10.2(10.8/3).
+         --  determined by the point of call (RM 3.10.2(10.8/3)).
 
          if Ada_Version >= Ada_2005
            and then Ekind (R_Type) = E_Anonymous_Access_Type
@@ -3070,7 +3133,7 @@ package body Sem_Ch6 is
                   --  To ensure proper coverage when body is inlined, indicate
                   --  whether the subprogram comes from source.
 
-                  Set_Comes_From_Source (Subp, Comes_From_Source (N));
+                  Preserve_Comes_From_Source (Subp, N);
 
                   if Present (First_Formal (Body_Id)) then
                      Plist := Copy_Parameter_List (Body_Id);
@@ -4402,13 +4465,7 @@ package body Sem_Ch6 is
 
       --  Handle inlining
 
-      --  Note: Normally we don't do any inlining if expansion is off, since
-      --  we won't generate code in any case. An exception arises in GNATprove
-      --  mode where we want to expand some calls in place, even with expansion
-      --  disabled, since the inlining eases formal verification.
-
-      if not GNATprove_Mode
-        and then Expander_Active
+      if Expander_Active
         and then Serious_Errors_Detected = 0
         and then Present (Spec_Id)
         and then Has_Pragma_Inline (Spec_Id)
@@ -5464,9 +5521,7 @@ package body Sem_Ch6 is
                           N_Formal_Abstract_Subprogram_Declaration,
                           N_Subprogram_Renaming_Declaration)
          then
-            if Is_Abstract_Type (Etype (Designator))
-              and then not Is_Interface (Etype (Designator))
-            then
+            if Is_Abstract_Type (Etype (Designator)) then
                Error_Msg_N
                  ("function that returns abstract type must be abstract", N);
 
@@ -5711,16 +5766,8 @@ package body Sem_Ch6 is
             end if;
 
             return;
-
-         elsif Is_Formal_Subprogram (Old_Id)
-           or else Is_Formal_Subprogram (New_Id)
-           or else (Is_Subprogram (New_Id)
-                     and then Present (Alias (New_Id))
-                     and then Is_Formal_Subprogram (Alias (New_Id)))
-         then
-            Conformance_Error
-              ("\formal subprograms are not subtype conformant "
-               & "(RM 6.3.1 (17/3))");
+         else
+            Check_Formal_Subprogram_Conformance (New_Id, Old_Id, Err_Loc);
          end if;
       end if;
 
@@ -6492,6 +6539,37 @@ package body Sem_Ch6 is
          return;
       end if;
    end Check_Discriminant_Conformance;
+
+   -----------------------------------------
+   -- Check_Formal_Subprogram_Conformance --
+   -----------------------------------------
+
+   procedure Check_Formal_Subprogram_Conformance
+     (New_Id  : Entity_Id;
+      Old_Id  : Entity_Id;
+      Err_Loc : Node_Id := Empty)
+   is
+      N : Node_Id;
+   begin
+      if Is_Formal_Subprogram (Old_Id)
+        or else Is_Formal_Subprogram (New_Id)
+        or else (Is_Subprogram (New_Id)
+                  and then Present (Alias (New_Id))
+                  and then Is_Formal_Subprogram (Alias (New_Id)))
+      then
+         if Present (Err_Loc) then
+            N := Err_Loc;
+         else
+            N := New_Id;
+         end if;
+
+         Error_Msg_Sloc := Sloc (Old_Id);
+         Error_Msg_N ("not subtype conformant with declaration#!", N);
+         Error_Msg_NE
+           ("\formal subprograms are not subtype conformant "
+            & "(RM 6.3.1 (17/3))", N, New_Id);
+      end if;
+   end Check_Formal_Subprogram_Conformance;
 
    ----------------------------
    -- Check_Fully_Conformant --
@@ -9403,6 +9481,28 @@ package body Sem_Ch6 is
          end if;
       end FCO;
 
+      function User_Defined_Numeric_Literal_Mismatch return Boolean;
+      --  Usually literals with the same value like 12345 and 12_345
+      --  or 123.0 and 123.00 conform, but not if they are
+      --  user-defined literals.
+
+      -------------------------------------------
+      -- User_Defined_Numeric_Literal_Mismatch --
+      -------------------------------------------
+
+      function User_Defined_Numeric_Literal_Mismatch return Boolean is
+         E1_Is_User_Defined : constant Boolean :=
+           not Nkind_In (Given_E1, N_Integer_Literal, N_Real_Literal);
+         E2_Is_User_Defined : constant Boolean :=
+           not Nkind_In (Given_E2, N_Integer_Literal, N_Real_Literal);
+      begin
+         pragma Assert (E1_Is_User_Defined = E2_Is_User_Defined);
+
+         return E1_Is_User_Defined and then
+           not String_Equal (String_From_Numeric_Literal (E1),
+                             String_From_Numeric_Literal (E2));
+      end User_Defined_Numeric_Literal_Mismatch;
+
       --  Local variables
 
       Result : Boolean;
@@ -9664,7 +9764,8 @@ package body Sem_Ch6 is
                  FCL (Expressions (E1), Expressions (E2));
 
             when N_Integer_Literal =>
-               return (Intval (E1) = Intval (E2));
+               return (Intval (E1) = Intval (E2))
+                 and then not User_Defined_Numeric_Literal_Mismatch;
 
             when N_Null =>
                return True;
@@ -9750,7 +9851,8 @@ package body Sem_Ch6 is
                  FCE (High_Bound (E1), High_Bound (E2));
 
             when N_Real_Literal =>
-               return (Realval (E1) = Realval (E2));
+               return (Realval (E1) = Realval (E2))
+                 and then not User_Defined_Numeric_Literal_Mismatch;
 
             when N_Selected_Component =>
                return

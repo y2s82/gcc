@@ -99,7 +99,7 @@ package body Exp_Ch4 is
 
    procedure Expand_Allocator_Expression (N : Node_Id);
    --  Subsidiary to Expand_N_Allocator, for the case when the expression
-   --  is a qualified expression or an aggregate.
+   --  is a qualified expression.
 
    procedure Expand_Array_Comparison (N : Node_Id);
    --  This routine handles expansion of the comparison operators (N_Op_Lt,
@@ -224,11 +224,17 @@ package body Exp_Ch4 is
    --  skipped if the operation is done in Bignum mode but that's fine, since
    --  the Bignum call takes care of everything.
 
+   procedure Narrow_Large_Operation (N : Node_Id);
+   --  Try to compute the result of a large operation in a narrower type than
+   --  its nominal type. This is mainly aimed to get rid of operations done in
+   --  Universal_Integer that can be generated for attributes.
+
    procedure Optimize_Length_Comparison (N : Node_Id);
    --  Given an expression, if it is of the form X'Length op N (or the other
-   --  way round), where N is known at compile time to be 0 or 1, and X is a
-   --  simple entity, and op is a comparison operator, optimizes it into a
-   --  comparison of First and Last.
+   --  way round), where N is known at compile time to be 0 or 1, or something
+   --  else where the value is known to be nonnegative and in the 32-bit range,
+   --  and X is a simple entity, and op is a comparison operator, optimizes it
+   --  into a comparison of X'First and X'Last.
 
    procedure Process_If_Case_Statements (N : Node_Id; Stmts : List_Id);
    --  Inspect and process statement list Stmt of if or case expression N for
@@ -780,10 +786,10 @@ package body Exp_Ch4 is
 
       --  Local variables
 
-      Aggr_In_Place : constant Boolean   := Is_Delayed_Aggregate (Exp);
       Indic         : constant Node_Id   := Subtype_Mark (Expression (N));
       T             : constant Entity_Id := Entity (Indic);
       Adj_Call      : Node_Id;
+      Aggr_In_Place : Boolean;
       Node          : Node_Id;
       Tag_Assign    : Node_Id;
       Temp          : Entity_Id;
@@ -804,6 +810,44 @@ package body Exp_Ch4 is
          Make_CPP_Constructor_Call_In_Allocator
            (Allocator => N,
             Function_Call => Exp);
+         return;
+      end if;
+
+      --  If we have:
+      --    type A is access T1;
+      --    X : A := new T2'(...);
+      --  T1 and T2 can be different subtypes, and we might need to check
+      --  both constraints. First check against the type of the qualified
+      --  expression.
+
+      Apply_Constraint_Check (Exp, T, No_Sliding => True);
+
+      Apply_Predicate_Check (Exp, T);
+
+      if Do_Range_Check (Exp) then
+         Generate_Range_Check (Exp, T, CE_Range_Check_Failed);
+      end if;
+
+      --  A check is also needed in cases where the designated subtype is
+      --  constrained and differs from the subtype given in the qualified
+      --  expression. Note that the check on the qualified expression does
+      --  not allow sliding, but this check does (a relaxation from Ada 83).
+
+      if Is_Constrained (DesigT)
+        and then not Subtypes_Statically_Match (T, DesigT)
+      then
+         Apply_Constraint_Check (Exp, DesigT, No_Sliding => False);
+
+         Apply_Predicate_Check (Exp, DesigT);
+
+         if Do_Range_Check (Exp) then
+            Generate_Range_Check (Exp, DesigT, CE_Range_Check_Failed);
+         end if;
+      end if;
+
+      if Nkind (Exp) = N_Raise_Constraint_Error then
+         Rewrite (N, New_Copy (Exp));
+         Set_Etype (N, PtrT);
          return;
       end if;
 
@@ -835,6 +879,8 @@ package body Exp_Ch4 is
             end if;
          end;
       end if;
+
+      Aggr_In_Place := Is_Delayed_Aggregate (Exp);
 
       --  Case of tagged type or type requiring finalization
 
@@ -936,8 +982,8 @@ package body Exp_Ch4 is
                --  the original allocator node. This is for proper handling of
                --  restriction No_Implicit_Heap_Allocations.
 
-               Set_Comes_From_Source
-                 (Expression (Temp_Decl), Comes_From_Source (N));
+               Preserve_Comes_From_Source
+                 (Expression (Temp_Decl), N);
 
                Set_No_Initialization (Expression (Temp_Decl));
                Insert_Action (N, Temp_Decl);
@@ -1216,35 +1262,6 @@ package body Exp_Ch4 is
 
       else
          Build_Allocate_Deallocate_Proc (N, True);
-
-         --  If we have:
-         --    type A is access T1;
-         --    X : A := new T2'(...);
-         --  T1 and T2 can be different subtypes, and we might need to check
-         --  both constraints. First check against the type of the qualified
-         --  expression.
-
-         Apply_Constraint_Check (Exp, T, No_Sliding => True);
-
-         if Do_Range_Check (Exp) then
-            Generate_Range_Check (Exp, DesigT, CE_Range_Check_Failed);
-         end if;
-
-         --  A check is also needed in cases where the designated subtype is
-         --  constrained and differs from the subtype given in the qualified
-         --  expression. Note that the check on the qualified expression does
-         --  not allow sliding, but this check does (a relaxation from Ada 83).
-
-         if Is_Constrained (DesigT)
-           and then not Subtypes_Statically_Match (T, DesigT)
-         then
-            Apply_Constraint_Check
-              (Exp, DesigT, No_Sliding => False);
-
-            if Do_Range_Check (Exp) then
-               Generate_Range_Check (Exp, DesigT, CE_Range_Check_Failed);
-            end if;
-         end if;
 
          --  For an access to unconstrained packed array, GIGI needs to see an
          --  expression with a constrained subtype in order to compute the
@@ -2008,34 +2025,33 @@ package body Exp_Ch4 is
             Ctyp         : constant Entity_Id := Component_Type (Ltyp);
             L, R         : Node_Id;
             TestL, TestH : Node_Id;
-            Index_List   : List_Id;
 
          begin
-            Index_List := New_List (New_Copy_Tree (Low_Bound (First_Idx)));
-
             L :=
               Make_Indexed_Component (Loc,
                 Prefix      => New_Copy_Tree (New_Lhs),
-                Expressions => Index_List);
+                Expressions =>
+                  New_List (New_Copy_Tree (Low_Bound (First_Idx))));
 
             R :=
               Make_Indexed_Component (Loc,
                 Prefix      => New_Copy_Tree (New_Rhs),
-                Expressions => Index_List);
+                Expressions =>
+                  New_List (New_Copy_Tree (Low_Bound (First_Idx))));
 
             TestL := Expand_Composite_Equality (Nod, Ctyp, L, R, Bodies);
-
-            Index_List := New_List (New_Copy_Tree (High_Bound (First_Idx)));
 
             L :=
               Make_Indexed_Component (Loc,
                 Prefix      => New_Lhs,
-                Expressions => Index_List);
+                Expressions =>
+                  New_List (New_Copy_Tree (High_Bound (First_Idx))));
 
             R :=
               Make_Indexed_Component (Loc,
                 Prefix      => New_Rhs,
-                Expressions => Index_List);
+                Expressions =>
+                  New_List (New_Copy_Tree (High_Bound (First_Idx))));
 
             TestH := Expand_Composite_Equality (Nod, Ctyp, L, R, Bodies);
 
@@ -4796,20 +4812,9 @@ package body Exp_Ch4 is
                New_Occurrence_Of (RTE (RE_Check_Standard_Allocator), Loc)));
       end if;
 
-      --  Handle case of qualified expression (other than optimization above).
-      --  First apply constraint checks, because the bounds or discriminants
-      --  in the aggregate might not match the subtype mark in the allocator.
+      --  Handle case of qualified expression (other than optimization above)
 
       if Nkind (Expression (N)) = N_Qualified_Expression then
-         declare
-            Exp : constant Node_Id   := Expression (Expression (N));
-            Typ : constant Entity_Id := Etype (Expression (N));
-
-         begin
-            Apply_Constraint_Check (Exp, Typ);
-            Apply_Predicate_Check  (Exp, Typ);
-         end;
-
          Expand_Allocator_Expression (N);
          return;
       end if;
@@ -4842,6 +4847,21 @@ package body Exp_Ch4 is
          Temp_Type : Entity_Id;
 
       begin
+         --  Apply constraint checks against designated subtype (RM 4.8(10/2)).
+         --  Discriminant checks will be generated by the expansion below.
+
+         if Is_Array_Type (Dtyp) then
+            Apply_Constraint_Check (Expression (N), Dtyp, No_Sliding => True);
+
+            Apply_Predicate_Check (Expression (N), Dtyp);
+
+            if Nkind (Expression (N)) = N_Raise_Constraint_Error then
+               Rewrite (N, New_Copy (Expression (N)));
+               Set_Etype (N, PtrT);
+               return;
+            end if;
+         end if;
+
          if No_Initialization (N) then
 
             --  Even though this might be a simple allocation, create a custom
@@ -6530,6 +6550,12 @@ package body Exp_Ch4 is
             end if;
          end;
 
+         --  Try to narrow the operation
+
+         if Ltyp = Universal_Integer and then Nkind (N) = N_In then
+            Narrow_Large_Operation (N);
+         end if;
+
          --  For all other cases of an explicit range, nothing to be done
 
          goto Leave;
@@ -7209,6 +7235,7 @@ package body Exp_Ch4 is
    procedure Expand_N_Op_Abs (N : Node_Id) is
       Loc  : constant Source_Ptr := Sloc (N);
       Expr : constant Node_Id    := Right_Opnd (N);
+      Typ  : constant Entity_Id  := Etype (N);
 
    begin
       Unary_Op_Validity_Checks (N);
@@ -7220,9 +7247,19 @@ package body Exp_Ch4 is
          return;
       end if;
 
+      --  Try to narrow the operation
+
+      if Typ = Universal_Integer then
+         Narrow_Large_Operation (N);
+
+         if Nkind (N) /= N_Op_Abs then
+            return;
+         end if;
+      end if;
+
       --  Deal with software overflow checking
 
-      if Is_Signed_Integer_Type (Etype (N))
+      if Is_Signed_Integer_Type (Typ)
         and then Do_Overflow_Check (N)
       then
          --  The only case to worry about is when the argument is equal to the
@@ -7278,6 +7315,16 @@ package body Exp_Ch4 is
            and then Expr_Value (Left_Opnd (N)) = Uint_0
          then
             Rewrite (N, Right_Opnd (N));
+            return;
+         end if;
+      end if;
+
+      --  Try to narrow the operation
+
+      if Typ = Universal_Integer then
+         Narrow_Large_Operation (N);
+
+         if Nkind (N) /= N_Op_Add then
             return;
          end if;
       end if;
@@ -7457,6 +7504,16 @@ package body Exp_Ch4 is
       if Rknow and then Rval = Uint_1 then
          Rewrite (N, Lopnd);
          return;
+      end if;
+
+      --  Try to narrow the operation
+
+      if Typ = Universal_Integer then
+         Narrow_Large_Operation (N);
+
+         if Nkind (N) /= N_Op_Divide then
+            return;
+         end if;
       end if;
 
       --  Convert x / 2 ** y to Shift_Right (x, y). Note that the fact that
@@ -8422,6 +8479,12 @@ package body Exp_Ch4 is
 
       Rewrite_Comparison (N);
 
+      --  Try to narrow the operation
+
+      if Typl = Universal_Integer and then Nkind (N) = N_Op_Eq then
+         Narrow_Large_Operation (N);
+      end if;
+
       --  Special optimization of length comparison
 
       Optimize_Length_Comparison (N);
@@ -8777,8 +8840,7 @@ package body Exp_Ch4 is
 
                --  Determine range to see if it can be larger than MaxS
 
-               Determine_Range
-                 (Right_Opnd (N), OK, Lo, Hi, Assume_Valid => True);
+               Determine_Range (Exp, OK, Lo, Hi, Assume_Valid => True);
                TestS := (not OK) or else Hi > MaxS;
 
                --  Signed integer case
@@ -8795,7 +8857,7 @@ package body Exp_Ch4 is
                        Make_Raise_Constraint_Error (Loc,
                          Condition =>
                            Make_Op_Gt (Loc,
-                             Left_Opnd  => Duplicate_Subexpr (Right_Opnd (N)),
+                             Left_Opnd  => Duplicate_Subexpr (Exp),
                              Right_Opnd => Make_Integer_Literal (Loc, MaxS)),
                          Reason    => CE_Overflow_Check_Failed));
                   end if;
@@ -8805,7 +8867,7 @@ package body Exp_Ch4 is
                   Rewrite (N,
                     Make_Op_Shift_Left (Loc,
                       Left_Opnd  => Make_Integer_Literal (Loc, Uint_1),
-                      Right_Opnd => Right_Opnd (N)));
+                      Right_Opnd => Exp));
 
                --  Modular integer case
 
@@ -8823,7 +8885,7 @@ package body Exp_Ch4 is
 
                      Test_Gt :=
                        Make_Op_Gt (Loc,
-                         Left_Opnd  => Duplicate_Subexpr (Right_Opnd (N)),
+                         Left_Opnd  => Duplicate_Subexpr (Exp),
                          Right_Opnd => Make_Integer_Literal (Loc, MaxS));
 
                      Rewrite (N,
@@ -8833,7 +8895,7 @@ package body Exp_Ch4 is
                            Make_Integer_Literal (Loc, Uint_0),
                            Make_Op_Shift_Left (Loc,
                              Left_Opnd  => Make_Integer_Literal (Loc, Uint_1),
-                             Right_Opnd => Right_Opnd (N)))));
+                             Right_Opnd => Exp))));
 
                   --  If we know shift count cannot be greater than MaxS, then
                   --  it is safe to just rewrite as a shift with no test.
@@ -8842,7 +8904,7 @@ package body Exp_Ch4 is
                      Rewrite (N,
                        Make_Op_Shift_Left (Loc,
                          Left_Opnd  => Make_Integer_Literal (Loc, Uint_1),
-                         Right_Opnd => Right_Opnd (N)));
+                         Right_Opnd => Exp));
                   end if;
                end if;
 
@@ -9039,6 +9101,12 @@ package body Exp_Ch4 is
 
       Rewrite_Comparison (N);
 
+      --  Try to narrow the operation
+
+      if Typ1 = Universal_Integer and then Nkind (N) = N_Op_Ge then
+         Narrow_Large_Operation (N);
+      end if;
+
       Optimize_Length_Comparison (N);
    end Expand_N_Op_Ge;
 
@@ -9081,6 +9149,12 @@ package body Exp_Ch4 is
       end if;
 
       Rewrite_Comparison (N);
+
+      --  Try to narrow the operation
+
+      if Typ1 = Universal_Integer and then Nkind (N) = N_Op_Gt then
+         Narrow_Large_Operation (N);
+      end if;
 
       Optimize_Length_Comparison (N);
    end Expand_N_Op_Gt;
@@ -9125,6 +9199,12 @@ package body Exp_Ch4 is
 
       Rewrite_Comparison (N);
 
+      --  Try to narrow the operation
+
+      if Typ1 = Universal_Integer and then Nkind (N) = N_Op_Le then
+         Narrow_Large_Operation (N);
+      end if;
+
       Optimize_Length_Comparison (N);
    end Expand_N_Op_Le;
 
@@ -9168,6 +9248,12 @@ package body Exp_Ch4 is
 
       Rewrite_Comparison (N);
 
+      --  Try to narrow the operation
+
+      if Typ1 = Universal_Integer and then Nkind (N) = N_Op_Lt then
+         Narrow_Large_Operation (N);
+      end if;
+
       Optimize_Length_Comparison (N);
    end Expand_N_Op_Lt;
 
@@ -9189,8 +9275,18 @@ package body Exp_Ch4 is
          return;
       end if;
 
+      --  Try to narrow the operation
+
+      if Typ = Universal_Integer then
+         Narrow_Large_Operation (N);
+
+         if Nkind (N) /= N_Op_Minus then
+            return;
+         end if;
+      end if;
+
       if not Backend_Overflow_Checks_On_Target
-         and then Is_Signed_Integer_Type (Etype (N))
+         and then Is_Signed_Integer_Type (Typ)
          and then Do_Overflow_Check (N)
       then
          --  Software overflow checking expands -expr into (0 - expr)
@@ -9238,7 +9334,17 @@ package body Exp_Ch4 is
          return;
       end if;
 
-      if Is_Integer_Type (Etype (N)) then
+      --  Try to narrow the operation
+
+      if Typ = Universal_Integer then
+         Narrow_Large_Operation (N);
+
+         if Nkind (N) /= N_Op_Mod then
+            return;
+         end if;
+      end if;
+
+      if Is_Integer_Type (Typ) then
          Apply_Divide_Checks (N);
 
          --  All done if we don't have a MOD any more, which can happen as a
@@ -9537,6 +9643,16 @@ package body Exp_Ch4 is
          end if;
       end if;
 
+      --  Try to narrow the operation
+
+      if Typ = Universal_Integer then
+         Narrow_Large_Operation (N);
+
+         if Nkind (N) /= N_Op_Multiply then
+            return;
+         end if;
+      end if;
+
       --  Convert x * 2 ** y to Shift_Left (x, y). Note that the fact that
       --  Is_Power_Of_2_For_Shift is set means that we know that our left
       --  operand is an integer, as required for this to work.
@@ -9719,6 +9835,12 @@ package body Exp_Ch4 is
          end if;
 
          Rewrite_Comparison (N);
+
+         --  Try to narrow the operation
+
+         if Typ = Universal_Integer and then Nkind (N) = N_Op_Ne then
+            Narrow_Large_Operation (N);
+         end if;
 
       --  For all cases other than elementary types, we rewrite node as the
       --  negation of an equality operation, and reanalyze. The equality to be
@@ -10002,6 +10124,8 @@ package body Exp_Ch4 is
    ----------------------
 
    procedure Expand_N_Op_Plus (N : Node_Id) is
+      Typ : constant Entity_Id := Etype (N);
+
    begin
       Unary_Op_Validity_Checks (N);
 
@@ -10010,6 +10134,12 @@ package body Exp_Ch4 is
       if Minimized_Eliminated_Overflow_Check (N) then
          Apply_Arithmetic_Overflow_Check (N);
          return;
+      end if;
+
+      --  Try to narrow the operation
+
+      if Typ = Universal_Integer then
+         Narrow_Large_Operation (N);
       end if;
    end Expand_N_Op_Plus;
 
@@ -10042,6 +10172,16 @@ package body Exp_Ch4 is
       if Minimized_Eliminated_Overflow_Check (N) then
          Apply_Arithmetic_Overflow_Check (N);
          return;
+      end if;
+
+      --  Try to narrow the operation
+
+      if Typ = Universal_Integer then
+         Narrow_Large_Operation (N);
+
+         if Nkind (N) /= N_Op_Rem then
+            return;
+         end if;
       end if;
 
       if Is_Integer_Type (Etype (N)) then
@@ -10406,6 +10546,16 @@ package body Exp_Ch4 is
       if Minimized_Eliminated_Overflow_Check (N) then
          Apply_Arithmetic_Overflow_Check (N);
          return;
+      end if;
+
+      --  Try to narrow the operation
+
+      if Typ = Universal_Integer then
+         Narrow_Large_Operation (N);
+
+         if Nkind (N) /= N_Op_Subtract then
+            return;
+         end if;
       end if;
 
       --  N - 0 = N for integer types
@@ -11862,20 +12012,13 @@ package body Exp_Ch4 is
             L, R : Node_Id;
 
          begin
-            R :=
-              Make_Type_Conversion (Loc,
-                Subtype_Mark => New_Occurrence_Of (Standard_Integer, Loc),
-                Expression   => Relocate_Node (Right_Opnd (Operand)));
-
             Opnd := New_Op_Node (Nkind (Operand), Loc);
+
+            R := Convert_To (Standard_Integer, Right_Opnd (Operand));
             Set_Right_Opnd (Opnd, R);
 
             if Nkind (Operand) in N_Binary_Op then
-               L :=
-                 Make_Type_Conversion (Loc,
-                   Subtype_Mark => New_Occurrence_Of (Standard_Integer, Loc),
-                   Expression   => Relocate_Node (Left_Opnd (Operand)));
-
+               L := Convert_To (Standard_Integer, Left_Opnd (Operand));
                Set_Left_Opnd  (Opnd, L);
             end if;
 
@@ -12280,9 +12423,11 @@ package body Exp_Ch4 is
          --  Special processing is required if there is a change of
          --  representation (from enumeration representation clauses).
 
-         if not Same_Representation (Target_Type, Operand_Type) then
+         if not Same_Representation (Target_Type, Operand_Type)
+           and then not Conversion_OK (N)
+         then
 
-            --  Convert: x(y) to x'val (ytyp'val (y))
+            --  Convert: x(y) to x'val (ytyp'pos (y))
 
             Rewrite (N,
               Make_Attribute_Reference (Loc,
@@ -12716,6 +12861,14 @@ package body Exp_Ch4 is
               Make_Op_Eq (Sloc (Alt),
                 Left_Opnd  => L,
                 Right_Opnd => R);
+
+            if Is_Record_Or_Limited_Type (Etype (Alt)) then
+
+               --  We reset the Entity in order to use the primitive equality
+               --  of the type, as per RM 4.5.2 (28.1/4).
+
+               Set_Entity (Cond, Empty);
+            end if;
          end if;
 
          return Cond;
@@ -13753,6 +13906,229 @@ package body Exp_Ch4 is
           and then Overflow_Check_Mode in Minimized_Or_Eliminated;
    end Minimized_Eliminated_Overflow_Check;
 
+   ----------------------------
+   -- Narrow_Large_Operation --
+   ----------------------------
+
+   procedure Narrow_Large_Operation (N : Node_Id) is
+      Kind   : constant Node_Kind := Nkind (N);
+      In_Rng : constant Boolean   := Kind = N_In;
+      Binary : constant Boolean   := Kind in N_Binary_Op or else In_Rng;
+      Compar : constant Boolean   := Kind in N_Op_Compare or else In_Rng;
+      R      : constant Node_Id   := Right_Opnd (N);
+      Typ    : constant Entity_Id := Etype (R);
+
+      function Get_Size_For_Range (Lo, Hi : Uint) return Nat;
+      --  Return the size of a small signed integer type covering Lo .. Hi.
+      --  The important thing is to return a size lower than that of Typ.
+
+      ------------------------
+      -- Get_Size_For_Range --
+      ------------------------
+
+      function Get_Size_For_Range (Lo, Hi : Uint) return Nat is
+
+         function Is_OK_For_Range (Siz : Nat) return Boolean;
+         --  Return True if a signed integer with given size can cover Lo .. Hi
+
+         --------------------------
+         -- Is_OK_For_Range --
+         --------------------------
+
+         function Is_OK_For_Range (Siz : Nat) return Boolean is
+            B : constant Uint := Uint_2 ** (Siz - 1);
+
+         begin
+            --  Test B = 2 ** (size - 1) (can accommodate -B .. +(B - 1))
+
+            return Lo >= -B and then Hi >= -B and then Lo < B and then Hi < B;
+         end Is_OK_For_Range;
+
+      begin
+         --  This is (almost always) the size of Integer
+
+         if Is_OK_For_Range (32) then
+            return 32;
+
+         --  If the size of Typ is 64 then check 63
+
+         elsif RM_Size (Typ) = 64 and then Is_OK_For_Range (63) then
+            return 63;
+
+         --  This is (almost always) the size of Long_Long_Integer
+
+         elsif Is_OK_For_Range (64) then
+            return 64;
+
+         else
+            return 128;
+         end if;
+      end Get_Size_For_Range;
+
+      --  Local variables
+
+      L          : Node_Id;
+      Llo, Lhi   : Uint;
+      Rlo, Rhi   : Uint;
+      Lsiz, Rsiz : Nat;
+      Nlo, Nhi   : Uint;
+      Nsiz       : Nat;
+      Ntyp       : Entity_Id;
+      Nop        : Node_Id;
+      OK         : Boolean;
+
+   --  Start of processing for Narrow_Large_Operation
+
+   begin
+      --  First, determine the range of the left operand, if any
+
+      if Binary then
+         L := Left_Opnd (N);
+         Determine_Range (L, OK, Llo, Lhi, Assume_Valid => True);
+         if not OK then
+            return;
+         end if;
+
+      else
+         L   := Empty;
+         Llo := Uint_0;
+         Lhi := Uint_0;
+      end if;
+
+      --  Second, determine the range of the right operand, which can itself
+      --  be a range, in which case we take the lower bound of the low bound
+      --  and the upper bound of the high bound.
+
+      if In_Rng then
+         declare
+            Zlo, Zhi : Uint;
+
+         begin
+            Determine_Range
+              (Low_Bound (R), OK, Rlo, Zhi, Assume_Valid => True);
+            if not OK then
+               return;
+            end if;
+
+            Determine_Range
+              (High_Bound (R), OK, Zlo, Rhi, Assume_Valid => True);
+            if not OK then
+               return;
+            end if;
+         end;
+
+      else
+         Determine_Range (R, OK, Rlo, Rhi, Assume_Valid => True);
+         if not OK then
+            return;
+         end if;
+      end if;
+
+      --  Then compute a size suitable for each range
+
+      if Binary then
+         Lsiz := Get_Size_For_Range (Llo, Lhi);
+      else
+         Lsiz := 0;
+      end if;
+
+      Rsiz := Get_Size_For_Range (Rlo, Rhi);
+
+      --  Now compute the size of the narrower type
+
+      if Compar then
+         --  The type must be able to accomodate the operands
+
+         Nsiz := Nat'Max (Lsiz, Rsiz);
+
+      else
+         --  The type must be able to accomodate the operand(s) and the result.
+
+         --  Note that Determine_Range typically does not report the bounds of
+         --  the value as being larger than those of the base type, which means
+         --  that it does not report overflow (see also Enable_Overflow_Check).
+
+         Determine_Range (N, OK, Nlo, Nhi, Assume_Valid => True);
+         if not OK then
+            return;
+         end if;
+
+         --  Therefore, if Nsiz is not lower than the size of the original type
+         --  here, we cannot be sure that the operation does not overflow.
+
+         Nsiz := Get_Size_For_Range (Nlo, Nhi);
+         Nsiz := Nat'Max (Nsiz, Lsiz);
+         Nsiz := Nat'Max (Nsiz, Rsiz);
+      end if;
+
+      --  If the size is not lower than the size of the original type, then
+      --  there is no point in changing the type, except in the case where
+      --  we can remove a conversion to the original type from an operand.
+
+      if Nsiz >= RM_Size (Typ)
+        and then not (Binary
+                       and then Nkind (L) = N_Type_Conversion
+                       and then Entity (Subtype_Mark (L)) = Typ)
+        and then not (Nkind (R) = N_Type_Conversion
+                       and then Entity (Subtype_Mark (R)) = Typ)
+      then
+         return;
+      end if;
+
+      --  Now pick the narrower type according to the size
+
+      if Nsiz <= RM_Size (Standard_Integer) then
+         Ntyp := Standard_Integer;
+
+      elsif Nsiz <= RM_Size (Standard_Long_Long_Integer) then
+         Ntyp := Standard_Long_Long_Integer;
+
+      else
+         return;
+      end if;
+
+      --  Finally rewrite the operation in the narrower type
+
+      Nop := New_Op_Node (Kind, Sloc (N));
+
+      if Binary then
+         Set_Left_Opnd (Nop, Convert_To (Ntyp, L));
+      end if;
+
+      if In_Rng then
+         Set_Right_Opnd (Nop,
+           Make_Range (Sloc (N),
+             Convert_To (Ntyp, Low_Bound (R)),
+             Convert_To (Ntyp, High_Bound (R))));
+      else
+         Set_Right_Opnd (Nop, Convert_To (Ntyp, R));
+      end if;
+
+      Rewrite (N, Nop);
+
+      if Compar then
+         --  Analyze it with the comparison type and checks suppressed since
+         --  the conversions of the operands cannot overflow.
+
+         Analyze_And_Resolve
+           (N, Etype (Original_Node (N)), Suppress => Overflow_Check);
+
+      else
+         --  Analyze it with the narrower type and checks suppressed, but only
+         --  when we are sure that the operation does not overflow, see above.
+
+         if Nsiz < RM_Size (Typ) then
+            Analyze_And_Resolve (N, Ntyp, Suppress => Overflow_Check);
+         else
+            Analyze_And_Resolve (N, Ntyp);
+         end if;
+
+         --  Put back a conversion to the original type
+
+         Convert_To_And_Rewrite (Typ, N);
+      end if;
+   end Narrow_Large_Operation;
+
    --------------------------------
    -- Optimize_Length_Comparison --
    --------------------------------
@@ -13770,61 +14146,79 @@ package body Exp_Ch4 is
       Is_Zero : Boolean;
       --  True for comparison operand of zero
 
+      Maybe_Superflat : Boolean;
+      --  True if we may be in the dynamic superflat case, i.e. Is_Zero is set
+      --  to false but the comparison operand can be zero at run time. In this
+      --  case, we normally cannot do anything because the canonical formula of
+      --  the length is not valid, but there is one exception: when the operand
+      --  is itself the length of an array with the same bounds as the array on
+      --  the LHS, we can entirely optimize away the comparison.
+
       Comp : Node_Id;
       --  Comparison operand, set only if Is_Zero is false
 
-      Ent : Entity_Id := Empty;
-      --  Entity whose length is being compared
+      Ent : array (Pos range 1 .. 2) of Entity_Id := (Empty, Empty);
+      --  Entities whose length is being compared
 
-      Index : Node_Id := Empty;
-      --  Integer_Literal node for length attribute expression, or Empty
+      Index : array (Pos range 1 .. 2) of Node_Id := (Empty, Empty);
+      --  Integer_Literal nodes for length attribute expressions, or Empty
       --  if there is no such expression present.
-
-      Ityp  : Entity_Id;
-      --  Type of array index to which 'Length is applied
 
       Op : Node_Kind := Nkind (N);
       --  Kind of comparison operator, gets flipped if operands backwards
 
-      function Is_Optimizable (N : Node_Id) return Boolean;
-      --  Tests N to see if it is an optimizable comparison value (defined as
-      --  constant zero or one, or something else where the value is known to
-      --  be positive and in the range of 32-bits, and where the corresponding
-      --  Length value is also known to be 32-bits. If result is true, sets
-      --  Is_Zero, Ityp, and Comp accordingly.
+      function Convert_To_Long_Long_Integer (N : Node_Id) return Node_Id;
+      --  Given a discrete expression, returns a Long_Long_Integer typed
+      --  expression representing the underlying value of the expression.
+      --  This is done with an unchecked conversion to Long_Long_Integer.
+      --  We use unchecked conversion to handle the enumeration type case.
 
-      function Is_Entity_Length (N : Node_Id) return Boolean;
+      function Is_Entity_Length (N : Node_Id; Num : Pos) return Boolean;
       --  Tests if N is a length attribute applied to a simple entity. If so,
       --  returns True, and sets Ent to the entity, and Index to the integer
       --  literal provided as an attribute expression, or to Empty if none.
+      --  Num is the index designating the relevant slot in Ent and Index.
       --  Also returns True if the expression is a generated type conversion
       --  whose expression is of the desired form. This latter case arises
       --  when Apply_Universal_Integer_Attribute_Check installs a conversion
       --  to check for being in range, which is not needed in this context.
       --  Returns False if neither condition holds.
 
-      function Prepare_64 (N : Node_Id) return Node_Id;
-      --  Given a discrete expression, returns a Long_Long_Integer typed
-      --  expression representing the underlying value of the expression.
-      --  This is done with an unchecked conversion to the result type. We
-      --  use unchecked conversion to handle the enumeration type case.
+      function Is_Optimizable (N : Node_Id) return Boolean;
+      --  Tests N to see if it is an optimizable comparison value (defined as
+      --  constant zero or one, or something else where the value is known to
+      --  be nonnegative and in the 32-bit range and where the corresponding
+      --  Length value is also known to be 32 bits). If result is true, sets
+      --  Is_Zero, Maybe_Superflat and Comp accordingly.
+
+      procedure Rewrite_For_Equal_Lengths;
+      --  Rewrite the comparison of two equal lengths into either True or False
+
+      ----------------------------------
+      -- Convert_To_Long_Long_Integer --
+      ----------------------------------
+
+      function Convert_To_Long_Long_Integer (N : Node_Id) return Node_Id is
+      begin
+         return Unchecked_Convert_To (Standard_Long_Long_Integer, N);
+      end Convert_To_Long_Long_Integer;
 
       ----------------------
       -- Is_Entity_Length --
       ----------------------
 
-      function Is_Entity_Length (N : Node_Id) return Boolean is
+      function Is_Entity_Length (N : Node_Id; Num : Pos) return Boolean is
       begin
          if Nkind (N) = N_Attribute_Reference
            and then Attribute_Name (N) = Name_Length
            and then Is_Entity_Name (Prefix (N))
          then
-            Ent := Entity (Prefix (N));
+            Ent (Num) := Entity (Prefix (N));
 
             if Present (Expressions (N)) then
-               Index := First (Expressions (N));
+               Index (Num) := First (Expressions (N));
             else
-               Index := Empty;
+               Index (Num) := Empty;
             end if;
 
             return True;
@@ -13832,7 +14226,7 @@ package body Exp_Ch4 is
          elsif Nkind (N) = N_Type_Conversion
            and then not Comes_From_Source (N)
          then
-            return Is_Entity_Length (Expression (N));
+            return Is_Entity_Length (Expression (N), Num);
 
          else
             return False;
@@ -13849,64 +14243,106 @@ package body Exp_Ch4 is
          Lo   : Uint;
          Hi   : Uint;
          Indx : Node_Id;
+         Dbl  : Boolean;
+         Ityp : Entity_Id;
 
       begin
          if Compile_Time_Known_Value (N) then
             Val := Expr_Value (N);
 
             if Val = Uint_0 then
-               Is_Zero := True;
-               Comp    := Empty;
+               Is_Zero         := True;
+               Maybe_Superflat := False;
+               Comp            := Empty;
                return True;
 
             elsif Val = Uint_1 then
-               Is_Zero := False;
-               Comp    := Empty;
+               Is_Zero         := False;
+               Maybe_Superflat := False;
+               Comp            := Empty;
                return True;
             end if;
          end if;
 
-         --  Here we have to make sure of being within 32-bits
+         --  Here we have to make sure of being within a 32-bit range (take the
+         --  full unsigned range so the length of 32-bit arrays is accepted).
 
          Determine_Range (N, OK, Lo, Hi, Assume_Valid => True);
 
          if not OK
-           or else Lo < Uint_1
-           or else Hi > UI_From_Int (Int'Last)
+           or else Lo < Uint_0
+           or else Hi > Uint_2 ** 32
          then
             return False;
          end if;
 
-         --  Comparison value was within range, so now we must check the index
-         --  value to make sure it is also within 32-bits.
+         Maybe_Superflat := (Lo = Uint_0);
 
-         Indx := First_Index (Etype (Ent));
+         --  Tests if N is also a length attribute applied to a simple entity
 
-         if Present (Index) then
-            for J in 2 .. UI_To_Int (Intval (Index)) loop
-               Next_Index (Indx);
-            end loop;
-         end if;
+         Dbl := Is_Entity_Length (N, 2);
 
-         Ityp := Etype (Indx);
+         --  We can deal with the superflat case only if N is also a length
 
-         if Esize (Ityp) > 32 then
+         if Maybe_Superflat and then not Dbl then
             return False;
          end if;
+
+         --  Comparison value was within range, so now we must check the index
+         --  value to make sure it is also within 32 bits.
+
+         for K in Pos range 1 .. 2 loop
+            Indx := First_Index (Etype (Ent (K)));
+
+            if Present (Index (K)) then
+               for J in 2 .. UI_To_Int (Intval (Index (K))) loop
+                  Next_Index (Indx);
+               end loop;
+            end if;
+
+            Ityp := Etype (Indx);
+
+            if Esize (Ityp) > 32 then
+               return False;
+            end if;
+
+            exit when not Dbl;
+         end loop;
 
          Is_Zero := False;
          Comp := N;
          return True;
       end Is_Optimizable;
 
-      ----------------
-      -- Prepare_64 --
-      ----------------
+      -------------------------------
+      -- Rewrite_For_Equal_Lengths --
+      -------------------------------
 
-      function Prepare_64 (N : Node_Id) return Node_Id is
+      procedure Rewrite_For_Equal_Lengths is
       begin
-         return Unchecked_Convert_To (Standard_Long_Long_Integer, N);
-      end Prepare_64;
+         case Op is
+            when N_Op_Eq
+               | N_Op_Ge
+               | N_Op_Le
+            =>
+               Rewrite (N,
+                 Convert_To (Typ,
+                    New_Occurrence_Of (Standard_True, Sloc (N))));
+
+            when N_Op_Ne
+               | N_Op_Gt
+               | N_Op_Lt
+            =>
+               Rewrite (N,
+                 Convert_To (Typ,
+                    New_Occurrence_Of (Standard_False, Sloc (N))));
+
+            when others =>
+               raise Program_Error;
+         end case;
+
+         Analyze_And_Resolve (N, Typ);
+      end Rewrite_For_Equal_Lengths;
 
    --  Start of processing for Optimize_Length_Comparison
 
@@ -13925,14 +14361,14 @@ package body Exp_Ch4 is
 
       --  Ent'Length op 0/1
 
-      if Is_Entity_Length (Left_Opnd (N))
+      if Is_Entity_Length (Left_Opnd (N), 1)
         and then Is_Optimizable (Right_Opnd (N))
       then
          null;
 
       --  0/1 op Ent'Length
 
-      elsif Is_Entity_Length (Right_Opnd (N))
+      elsif Is_Entity_Length (Right_Opnd (N), 1)
         and then Is_Optimizable (Left_Opnd (N))
       then
          --  Flip comparison to opposite sense
@@ -14026,41 +14462,124 @@ package body Exp_Ch4 is
 
       Left :=
         Make_Attribute_Reference (Loc,
-          Prefix         => New_Occurrence_Of (Ent, Loc),
+          Prefix         => New_Occurrence_Of (Ent (1), Loc),
           Attribute_Name => Name_First);
 
-      if Present (Index) then
-         Set_Expressions (Left, New_List (New_Copy (Index)));
-      end if;
-
-      --  If general value case, then do the addition of (n - 1), and
-      --  also add the needed conversions to type Long_Long_Integer.
-
-      if Present (Comp) then
-         Left :=
-           Make_Op_Add (Loc,
-             Left_Opnd  => Prepare_64 (Left),
-             Right_Opnd =>
-               Make_Op_Subtract (Loc,
-                 Left_Opnd  => Prepare_64 (Comp),
-                 Right_Opnd => Make_Integer_Literal (Loc, 1)));
+      if Present (Index (1)) then
+         Set_Expressions (Left, New_List (New_Copy (Index (1))));
       end if;
 
       --  Build the Last reference we will use
 
       Right :=
         Make_Attribute_Reference (Loc,
-          Prefix         => New_Occurrence_Of (Ent, Loc),
+          Prefix         => New_Occurrence_Of (Ent (1), Loc),
           Attribute_Name => Name_Last);
 
-      if Present (Index) then
-         Set_Expressions (Right, New_List (New_Copy (Index)));
+      if Present (Index (1)) then
+         Set_Expressions (Right, New_List (New_Copy (Index (1))));
+      end if;
+
+      --  If general value case, then do the addition of (n - 1), and
+      --  also add the needed conversions to type Long_Long_Integer.
+
+      --  If n = Y'Length, we rewrite X'First + (n - 1) op X'Last into:
+
+      --    Y'Last + (X'First - Y'First) op X'Last
+
+      --  in the hope that X'First - Y'First can be computed statically.
+
+      if Present (Comp) then
+         if Present (Ent (2)) then
+            declare
+               Y_First : constant Node_Id :=
+                 Make_Attribute_Reference (Loc,
+                   Prefix         => New_Occurrence_Of (Ent (2), Loc),
+                   Attribute_Name => Name_First);
+               Y_Last : constant Node_Id :=
+                 Make_Attribute_Reference (Loc,
+                   Prefix         => New_Occurrence_Of (Ent (2), Loc),
+                   Attribute_Name => Name_Last);
+               R : Compare_Result;
+
+            begin
+               if Present (Index (2)) then
+                  Set_Expressions (Y_First, New_List (New_Copy (Index (2))));
+                  Set_Expressions (Y_Last,  New_List (New_Copy (Index (2))));
+               end if;
+
+               Analyze (Left);
+               Analyze (Y_First);
+
+               --  If X'First = Y'First, simplify the above formula into a
+               --  direct comparison of Y'Last and X'Last.
+
+               R := Compile_Time_Compare (Left, Y_First, Assume_Valid => True);
+
+               if R = EQ then
+                  Analyze (Right);
+                  Analyze (Y_Last);
+
+                  R := Compile_Time_Compare
+                                         (Right, Y_Last, Assume_Valid => True);
+
+                  --  If the pairs of attributes are equal, we are done
+
+                  if R = EQ then
+                     Rewrite_For_Equal_Lengths;
+                     return;
+                  end if;
+
+                  --  If the base types are different, convert both operands to
+                  --  Long_Long_Integer, else compare them directly.
+
+                  if Base_Type (Etype (Right)) /= Base_Type (Etype (Y_Last))
+                  then
+                     Left := Convert_To_Long_Long_Integer (Y_Last);
+                  else
+                     Left := Y_Last;
+                     Comp := Empty;
+                  end if;
+
+               --  Otherwise, use the above formula as-is
+
+               else
+                  Left :=
+                    Make_Op_Add (Loc,
+                      Left_Opnd  =>
+                        Convert_To_Long_Long_Integer (Y_Last),
+                      Right_Opnd =>
+                        Make_Op_Subtract (Loc,
+                          Left_Opnd  =>
+                            Convert_To_Long_Long_Integer (Left),
+                          Right_Opnd =>
+                            Convert_To_Long_Long_Integer (Y_First)));
+               end if;
+            end;
+
+         --  General value case
+
+         else
+            Left :=
+              Make_Op_Add (Loc,
+                Left_Opnd  => Convert_To_Long_Long_Integer (Left),
+                Right_Opnd =>
+                  Make_Op_Subtract (Loc,
+                    Left_Opnd  => Convert_To_Long_Long_Integer (Comp),
+                    Right_Opnd => Make_Integer_Literal (Loc, 1)));
+         end if;
+      end if;
+
+      --  We cannot do anything in the superflat case past this point
+
+      if Maybe_Superflat then
+         return;
       end if;
 
       --  If general operand, convert Last reference to Long_Long_Integer
 
       if Present (Comp) then
-         Right := Prepare_64 (Right);
+         Right := Convert_To_Long_Long_Integer (Right);
       end if;
 
       --  Check for cases to optimize
@@ -14137,11 +14656,10 @@ package body Exp_Ch4 is
          raise Program_Error;
       end if;
 
-      --  Rewrite and finish up
+      --  Rewrite and finish up (we can suppress overflow checks, see above)
 
       Rewrite (N, Result);
-      Analyze_And_Resolve (N, Typ);
-      return;
+      Analyze_And_Resolve (N, Typ, Suppress => Overflow_Check);
    end Optimize_Length_Comparison;
 
    --------------------------------
