@@ -2,7 +2,19 @@
 #include "libgompd.h"
 #include "plugin-suffix.h"
 
-void ompd_init()
+ompd_rc_t ompd_get_api_version(ompd_word_t *version)
+{
+    *version = OMPD_VERSION;
+    return ompd_rc_ok;
+}
+
+ompd_rc_t ompd_get_version_string(const char **string)
+{
+    string = str(OMPD_VERSION);
+    return ompd_rc_ok;
+}
+
+ompd_rc_t ompd_initialize ( ompd_word_t api_version, const ompd_callbacks_t *callbacks )
 {
     static int ompd_initialized = 0;
 
@@ -20,7 +32,7 @@ void ompd_init()
     memcpy (ompd_name, prefix, prefix_len);
     memcpy (ompd_name + prefix_len, suffix, suffix_len + 1);
 
-    ompd_dell_locations = { ompd_name, NULL };
+    ompd_dll_locations = { ompd_name, NULL };
 
     ompd_initialized = 1;
 }
