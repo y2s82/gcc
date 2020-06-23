@@ -2525,6 +2525,14 @@ gfc_match_oacc_routine (void)
     /* Something has gone wrong, possibly a syntax error.  */
     goto cleanup;
 
+  if (gfc_pure (NULL) && c && (c->gang || c->worker || c->vector))
+    {
+      gfc_error ("!$ACC ROUTINE with GANG, WORKER, or VECTOR clause is not "
+		 "permitted in PURE procedure at %C");
+      goto cleanup;
+    }
+
+
   if (n)
     n->clauses = c;
   else if (gfc_current_ns->oacc_routine)
@@ -4628,6 +4636,13 @@ resolve_omp_clauses (gfc_code *code, gfc_omp_clauses *omp_clauses,
 			 && n->sym->as->type == AS_ASSUMED_SIZE)
 		  gfc_error ("Assumed size array %qs in %s clause at %L",
 			     n->sym->name, name, &n->where);
+		if (!openacc
+		    && list == OMP_LIST_MAP
+		    && n->sym->ts.type == BT_DERIVED
+		    && n->sym->ts.u.derived->attr.alloc_comp)
+		  gfc_error ("List item %qs with allocatable components is not "
+			     "permitted in map clause at %L", n->sym->name,
+			     &n->where);
 		if (list == OMP_LIST_MAP && !openacc)
 		  switch (code->op)
 		    {

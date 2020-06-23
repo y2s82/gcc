@@ -1,3 +1,159 @@
+2020-06-20  Iain Sandoe  <iain@sandoe.co.uk>
+
+	PR c++/95505
+	* coroutines.cc (morph_fn_to_coro): Update handling of
+	get-return-object-on-allocation-fail and diagnose missing
+	std::nothrow.
+
+2020-06-20  Jason Merrill  <jason@redhat.com>
+
+	* call.c (joust): Only compare constraints for non-template
+	candidates with matching parameters.
+	* pt.c (tsubst_pack_expansion): Fix getting a type parameter
+	pack.
+	(more_specialized_fn): Only compare constraints for candidates with
+	matching parameters.
+
+2020-06-19  Jason Merrill  <jason@redhat.com>
+
+	* method.c (early_check_defaulted_comparison): Allow defaulting
+	comparison outside class.  Complain if non-member operator isn't a
+	friend.
+
+2020-06-18  Jason Merrill  <jason@redhat.com>
+
+	* method.c (early_check_defaulted_comparison): Check for &&.
+	(build_comparison_op): Allow empty union.  Diagnose non-category
+	type.
+	(common_comparison_type): Remove handling for non-category type.
+
+2020-06-18  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/95735
+	* pt.c (finish_template_variable): Return if
+	coerce_innermost_template_parms return error_mark_node.
+
+2020-06-18  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/95728
+	* pt.c (tsubst_copy_and_build) <case NEW_EXPR>: Return error_mark_node
+	if placement is erroneous.
+
+2020-06-17  Jonathan Wakely  <jwakely@redhat.com>
+
+	PR c++/66159
+	* parser.c (cp_parser_elaborated_type_specifier): Do not warn
+	unless in a declaration.
+
+2020-06-17  Jason Merrill  <jason@redhat.com>
+
+	* cp-tree.h (copy_fndecl_with_name): Declare.
+	* class.c (copy_fndecl_with_name): Split out from...
+	(build_clone): ...here.
+	(add_implicitly_declared_members): Add op== to TYPE_FIELDS.
+	* method.c (implicitly_declare_fn): Use copy_fndecl_with_name.
+
+2020-06-17  Jason Merrill  <jason@redhat.com>
+
+	* call.c (build_new_op_1): Don't look for a CALL_EXPR when
+	calling a consteval function.
+
+2020-06-17  Jason Merrill  <jason@redhat.com>
+
+	* decl2.c (grokfield): Pass SD_DEFAULTED and SD_DELETED.
+	* decl.c (duplicate_decls): Reduce error for delete
+	after earlier declaration to pedwarn.
+
+2020-06-17  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/95508
+	* constexpr.c (maybe_fold_non_dependent_expr): New.
+	* cp-tree.h (maybe_fold_non_dependent_expr): Declare.
+	* typeck.c (cp_build_array_ref): Call maybe_fold_non_dependent_expr
+	instead of maybe_constant_value.
+
+2020-06-16  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/95369
+	* call.c (add_list_candidates): Return if a designated initializer
+	is used with a non-aggregate.
+	(implicit_conversion_error): Give an error for the case above.
+
+2020-06-16  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/95560
+	* name-lookup.c (check_local_shadow): Check if types are
+	non-null before calling same_type_p.
+
+2020-06-16  Jakub Jelinek  <jakub@redhat.com>
+
+	* semantics.c (handle_omp_for_class_iterator): Adjust
+	c_omp_check_loop_iv_exprs caller.
+	(finish_omp_for): Likewise.  Don't call fold_build_cleanup_point_expr
+	before calling c_finish_omp_for and c_omp_check_loop_iv, move it
+	after those calls.
+	* pt.c (tsubst_omp_for_iterator): Handle non-rectangular loops.
+
+2020-06-16  Jakub Jelinek  <jakub@redhat.com>
+
+	* parser.c (cp_parser_omp_clause_schedule): Reject modifier separated
+	from kind by comma rather than colon.
+
+2020-06-16  Patrick Palka  <ppalka@redhat.com>
+
+	* pt.c (perform_instantiation_time_access_checks): No need to
+	tsubst into decl.
+	* semantics.c (enforce_access): Verify that decl is not
+	dependent.
+
+2020-06-16  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/41437
+	PR c++/47346
+	* cp-tree.h (qualified_typedef_usage_s): Delete.
+	(qualified_typedef_usage_t): Delete.
+	(deferred_access_check): Move up in file.
+	(tree_template_info::typedefs_needing_access_checking): Delete.
+	(tree_template_info::deferred_access_checks): New field.
+	(TI_TYPEDEFS_NEEDING_ACCESS_CHECKING): Rename to ...
+	(TI_DEFERRED_ACCESS_CHECKS): ... this, and adjust accordingly.
+	* pt.c (perform_typedefs_access_check): Rename to ...
+	(perform_instantiation_time_access_checks): ... this, and adjust
+	accordingly.  Remove unnecessary tree tests.
+	(instantiate_class_template_1): Adjust accordingly.
+	(instantiate_decl): Likewise.
+	* semantics.c (enforce_access): Likewise.
+
+2020-06-16  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/41437
+	PR c++/47346
+	* call.c (enforce_access): Move to semantics.c.
+	* cp-tree.h (enforce_access): Delete.
+	(get_types_needing_access_check): Delete.
+	(add_typedef_to_current_template_for_access_check): Delete.
+	* decl.c (make_typename_type): Adjust accordingly.  Use
+	check_accessibility_of_qualified_id instead of directly using
+	perform_or_defer_access_check.
+	* parser.c (cp_parser_template_declaration_after_parameters):
+	Don't push a dk_no_check access state when parsing a template.
+	* pt.c (get_types_needing_access_check): Delete.
+	(append_type_to_template_for_access_check_1): Delete.
+	(perform_typedefs_access_check): Adjust.  If type_decl is a
+	FIELD_DECL, also check its DECL_CONTEXT for dependence. Use
+	tsubst_copy instead of tsubst to substitute into type_decl so
+	that we substitute into the DECL_CONTEXT of a FIELD_DECL.
+	(append_type_to_template_for_access_check): Delete.
+	* search.c (accessible_p): Remove the processing_template_decl
+	early exit.
+	* semantics.c (enforce_access): Moved from call.c.  If we're
+	parsing a template and the access check failed, add the check to
+	TI_TYPEDEFS_NEEDING_ACCESS_CHECKING.
+	(perform_or_defer_access_check): Adjust comment.
+	(add_typedef_to_current_template_for_access_check): Delete.
+	(check_accessibility_of_qualified_id):  Adjust accordingly.
+	Exit early if the scope is dependent.
+
 2020-06-11  Patrick Palka  <ppalka@redhat.com>
 
 	PR c++/93467

@@ -92,6 +92,11 @@ package body Sem_Ch3 is
    --  abstract interface types implemented by a record type or a derived
    --  record type.
 
+   procedure Build_Access_Subprogram_Wrapper (Decl : Node_Id);
+   --  When an access-to-subprogram type has pre/postconditions, we build a
+   --  subprogram that includes these contracts and is invoked by an indirect
+   --  call through the corresponding access type.
+
    procedure Build_Derived_Type
      (N             : Node_Id;
       Parent_Type   : Entity_Id;
@@ -253,6 +258,11 @@ package body Sem_Ch3 is
    --  is placed ahead of that of the record to prevent order-of-elaboration
    --  circularity issues in Gigi. We create an incomplete type for the record
    --  declaration, which is the designated type of the anonymous access.
+
+   procedure Check_Constraining_Discriminant (New_Disc, Old_Disc : Entity_Id);
+   --  Check that, if a new discriminant is used in a constraint defining the
+   --  parent subtype of a derivation, its subtype is statically compatible
+   --  with the subtype of the corresponding parent discriminant (RM 3.7(15)).
 
    procedure Check_Delta_Expression (E : Node_Id);
    --  Check that the expression represented by E is suitable for use as a
@@ -776,7 +786,7 @@ package body Sem_Ch3 is
          --  be available in the scope that encloses the protected declaration.
          --  Otherwise the type is in the scope enclosing the subprogram.
 
-         --  If the function has formals, The return type of a subprogram
+         --  If the function has formals, the return type of a subprogram
          --  declaration is analyzed in the scope of the subprogram (see
          --  Process_Formals) and thus the protected type, if present, is
          --  the scope of the current function scope.
@@ -3131,6 +3141,17 @@ package body Sem_Ch3 is
 
                Validate_Access_Type_Declaration (T, N);
 
+               --  If the type has contracts, we create the corresponding
+               --  wrapper at once, before analyzing the aspect specifications,
+               --  so that pre/postconditions can be handled directly on the
+               --  generated wrapper.
+
+               if Ada_Version >= Ada_2020
+                 and then Present (Aspect_Specifications (N))
+               then
+                  Build_Access_Subprogram_Wrapper (N);
+               end if;
+
             when N_Access_To_Object_Definition =>
                Access_Type_Declaration (T, Def);
 
@@ -4183,7 +4204,7 @@ package body Sem_Ch3 is
          Analyze (E);
 
          --  In case of errors detected in the analysis of the expression,
-         --  decorate it with the expected type to avoid cascaded errors
+         --  decorate it with the expected type to avoid cascaded errors.
 
          if No (Etype (E)) then
             Set_Etype (E, T);
@@ -5245,7 +5266,6 @@ package body Sem_Ch3 is
       Skip : Boolean := False)
    is
       Id       : constant Entity_Id := Defining_Identifier (N);
-      R_Checks : Check_Result;
       T        : Entity_Id;
 
    begin
@@ -5770,32 +5790,28 @@ package body Sem_Ch3 is
 
       --  Check that Constraint_Error is raised for a scalar subtype indication
       --  when the lower or upper bound of a non-null range lies outside the
-      --  range of the type mark.
+      --  range of the type mark. Likewise for an array subtype, but check the
+      --  compatibility for each index.
 
       if Nkind (Subtype_Indication (N)) = N_Subtype_Indication then
-         if Is_Scalar_Type (Etype (Id))
-           and then Scalar_Range (Id) /=
-                    Scalar_Range
-                      (Etype (Subtype_Mark (Subtype_Indication (N))))
-         then
-            Apply_Range_Check
-              (Scalar_Range (Id),
-               Etype (Subtype_Mark (Subtype_Indication (N))));
+         declare
+            Indic_Typ    : constant Entity_Id :=
+                             Etype (Subtype_Mark (Subtype_Indication (N)));
+            Subt_Index   : Node_Id;
+            Target_Index : Node_Id;
 
-         --  In the array case, check compatibility for each index
+         begin
+            if Is_Scalar_Type (Etype (Id))
+              and then Scalar_Range (Id) /= Scalar_Range (Indic_Typ)
+            then
+               Apply_Range_Check (Scalar_Range (Id), Indic_Typ);
 
-         elsif Is_Array_Type (Etype (Id)) and then Present (First_Index (Id))
-         then
-            --  This really should be a subprogram that finds the indications
-            --  to check???
+            elsif Is_Array_Type (Etype (Id))
+              and then Present (First_Index (Id))
+            then
+               Subt_Index   := First_Index (Id);
+               Target_Index := First_Index (Indic_Typ);
 
-            declare
-               Subt_Index   : Node_Id := First_Index (Id);
-               Target_Index : Node_Id :=
-                                First_Index (Etype
-                                  (Subtype_Mark (Subtype_Indication (N))));
-
-            begin
                while Present (Subt_Index) loop
                   if ((Nkind (Subt_Index) = N_Identifier
                         and then Ekind (Entity (Subt_Index)) in Scalar_Kind)
@@ -5803,30 +5819,17 @@ package body Sem_Ch3 is
                     and then
                       Nkind (Scalar_Range (Etype (Subt_Index))) = N_Range
                   then
-                     declare
-                        Target_Typ : constant Entity_Id :=
-                                       Etype (Target_Index);
-                     begin
-                        R_Checks :=
-                          Get_Range_Checks
-                            (Scalar_Range (Etype (Subt_Index)),
-                             Target_Typ,
-                             Etype (Subt_Index),
-                             Defining_Identifier (N));
-
-                        Insert_Range_Checks
-                          (R_Checks,
-                           N,
-                           Target_Typ,
-                           Sloc (Defining_Identifier (N)));
-                     end;
+                     Apply_Range_Check
+                       (Scalar_Range (Etype (Subt_Index)),
+                        Etype (Target_Index),
+                        Insert_Node => N);
                   end if;
 
                   Next_Index (Subt_Index);
                   Next_Index (Target_Index);
                end loop;
-            end;
-         end if;
+            end if;
+         end;
       end if;
 
       Set_Optimize_Alignment_Flags (Id);
@@ -6442,6 +6445,144 @@ package body Sem_Ch3 is
       return Anon;
    end Replace_Anonymous_Access_To_Protected_Subprogram;
 
+   -------------------------------------
+   -- Build_Access_Subprogram_Wrapper --
+   -------------------------------------
+
+   procedure Build_Access_Subprogram_Wrapper (Decl : Node_Id) is
+      Loc      : constant Source_Ptr := Sloc (Decl);
+      Id       : constant Entity_Id  := Defining_Identifier (Decl);
+      Type_Def : constant Node_Id    := Type_Definition (Decl);
+      Specs   :  constant List_Id    :=
+                              Parameter_Specifications (Type_Def);
+      Profile : constant List_Id     := New_List;
+      Subp    : constant Entity_Id   := Make_Temporary (Loc, 'A');
+
+      Contracts : constant List_Id := New_List;
+      Form_P    : Node_Id;
+      New_P     : Node_Id;
+      New_Decl  : Node_Id;
+      Spec      : Node_Id;
+
+      procedure Replace_Type_Name (Expr : Node_Id);
+      --  In the expressions for contract aspects, replace occurrences of the
+      --  access type with the name of the subprogram entity, as needed, e.g.
+      --  for 'Result. Aspects that are not contracts, e.g. Size or Alignment)
+      --  remain on the original access type declaration. What about expanded
+      --  names denoting formals, whose prefix in source is the type name ???
+
+      -----------------------
+      -- Replace_Type_Name --
+      -----------------------
+
+      procedure Replace_Type_Name (Expr : Node_Id) is
+         function Process (N : Node_Id) return Traverse_Result;
+         function Process (N : Node_Id) return Traverse_Result is
+         begin
+            if Nkind (N) = N_Attribute_Reference
+              and then Is_Entity_Name (Prefix (N))
+              and then Chars (Prefix (N)) = Chars (Id)
+            then
+               Set_Prefix (N, Make_Identifier (Sloc (N), Chars (Subp)));
+            end if;
+
+            return OK;
+         end Process;
+
+         procedure Traverse is new Traverse_Proc (Process);
+      begin
+         Traverse (Expr);
+      end Replace_Type_Name;
+
+   begin
+      if Ekind_In (Id, E_Access_Subprogram_Type,
+         E_Access_Protected_Subprogram_Type,
+         E_Anonymous_Access_Protected_Subprogram_Type,
+         E_Anonymous_Access_Subprogram_Type)
+      then
+         null;
+
+      else
+         Error_Msg_N
+           ("illegal pre/postcondition on access type", Decl);
+         return;
+      end if;
+
+      declare
+         Asp  : Node_Id;
+         A_Id : Aspect_Id;
+         Cond : Node_Id;
+         Expr : Node_Id;
+
+      begin
+         Asp := First (Aspect_Specifications (Decl));
+         while Present (Asp) loop
+            A_Id := Get_Aspect_Id (Chars (Identifier (Asp)));
+            if A_Id = Aspect_Pre or else A_Id = Aspect_Post then
+               Cond := Asp;
+               Expr := Expression (Cond);
+               Replace_Type_Name (Expr);
+               Next (Asp);
+
+               Remove (Cond);
+               Append (Cond, Contracts);
+
+            else
+               Next (Asp);
+            end if;
+         end loop;
+      end;
+
+      --  If there are no contract aspects, no need for a wrapper.
+
+      if Is_Empty_List (Contracts) then
+         return;
+      end if;
+
+      Form_P := First (Specs);
+
+      while Present (Form_P) loop
+         New_P := New_Copy_Tree (Form_P);
+         Set_Defining_Identifier (New_P,
+           Make_Defining_Identifier
+            (Loc, Chars (Defining_Identifier (Form_P))));
+         Append (New_P, Profile);
+         Next (Form_P);
+      end loop;
+
+      --  Add to parameter specifications the access parameter that is passed
+      --  in from an indirect call.
+
+      Append (
+         Make_Parameter_Specification (Loc,
+           Defining_Identifier => Make_Temporary (Loc, 'P'),
+           Parameter_Type  =>  New_Occurrence_Of (Id, Loc)),
+         Profile);
+
+      if Nkind (Type_Def) = N_Access_Procedure_Definition then
+         Spec :=
+           Make_Procedure_Specification (Loc,
+             Defining_Unit_Name       => Subp,
+             Parameter_Specifications => Profile);
+      else
+         Spec :=
+           Make_Function_Specification (Loc,
+             Defining_Unit_Name       => Subp,
+             Parameter_Specifications => Profile,
+             Result_Definition        =>
+               New_Copy_Tree
+                 (Result_Definition (Type_Definition (Decl))));
+      end if;
+
+      New_Decl :=
+        Make_Subprogram_Declaration (Loc, Specification => Spec);
+      Set_Aspect_Specifications (New_Decl, Contracts);
+
+      Insert_After (Decl, New_Decl);
+      Set_Access_Subprogram_Wrapper (Designated_Type (Id), Subp);
+      Build_Access_Subprogram_Wrapper_Body (Decl, New_Decl);
+   end Build_Access_Subprogram_Wrapper;
+
    -------------------------------
    -- Build_Derived_Access_Type --
    -------------------------------
@@ -6906,14 +7047,13 @@ package body Sem_Ch3 is
                   Error_Msg_NE
                     ("new discriminant& must constrain old one", N, New_Disc);
 
-               elsif not
-                 Subtypes_Statically_Compatible
-                   (Etype (New_Disc),
-                    Etype (Corresponding_Discriminant (New_Disc)))
-               then
-                  Error_Msg_NE
-                    ("& not statically compatible with parent discriminant",
-                      N, New_Disc);
+               --  If a new discriminant is used in the constraint, then its
+               --  subtype must be statically compatible with the subtype of
+               --  the parent discriminant (RM 3.7(15)).
+
+               else
+                  Check_Constraining_Discriminant
+                    (New_Disc, Corresponding_Discriminant (New_Disc));
                end if;
 
                Next_Discriminant (New_Disc);
@@ -9087,41 +9227,13 @@ package body Sem_Ch3 is
                end if;
 
                --  If a new discriminant is used in the constraint, then its
-               --  subtype must be statically compatible with the parent
-               --  discriminant's subtype (3.7(15)).
+               --  subtype must be statically compatible with the subtype of
+               --  the parent discriminant (RM 3.7(15)).
 
-               --  However, if the record contains an array constrained by
-               --  the discriminant but with some different bound, the compiler
-               --  tries to create a smaller range for the discriminant type.
-               --  (See exp_ch3.Adjust_Discriminants). In this case, where
-               --  the discriminant type is a scalar type, the check must use
-               --  the original discriminant type in the parent declaration.
-
-               declare
-                  Corr_Disc : constant Entity_Id :=
-                                Corresponding_Discriminant (Discrim);
-                  Disc_Type : constant Entity_Id := Etype (Discrim);
-                  Corr_Type : Entity_Id;
-
-               begin
-                  if Present (Corr_Disc) then
-                     if Is_Scalar_Type (Disc_Type) then
-                        Corr_Type :=
-                           Entity (Discriminant_Type (Parent (Corr_Disc)));
-                     else
-                        Corr_Type := Etype (Corr_Disc);
-                     end if;
-
-                     if not
-                        Subtypes_Statically_Compatible (Disc_Type, Corr_Type)
-                     then
-                        Error_Msg_N
-                          ("subtype must be compatible "
-                           & "with parent discriminant",
-                           Discrim);
-                     end if;
-                  end if;
-               end;
+               if Present (Corresponding_Discriminant (Discrim)) then
+                  Check_Constraining_Discriminant
+                    (Discrim, Corresponding_Discriminant (Discrim));
+               end if;
 
                Next_Discriminant (Discrim);
             end loop;
@@ -11623,6 +11735,41 @@ package body Sem_Ch3 is
       end loop;
    end Check_Completion;
 
+   -------------------------------------
+   -- Check_Constraining_Discriminant --
+   -------------------------------------
+
+   procedure Check_Constraining_Discriminant (New_Disc, Old_Disc : Entity_Id)
+   is
+      New_Type : constant Entity_Id := Etype (New_Disc);
+      Old_Type : Entity_Id;
+
+   begin
+      --  If the record type contains an array constrained by the discriminant
+      --  but with some different bound, the compiler tries to create a smaller
+      --  range for the discriminant type (see exp_ch3.Adjust_Discriminants).
+      --  In this case, where the discriminant type is a scalar type, the check
+      --  must use the original discriminant type in the parent declaration.
+
+      if Is_Scalar_Type (New_Type) then
+         Old_Type := Entity (Discriminant_Type (Parent (Old_Disc)));
+      else
+         Old_Type := Etype (Old_Disc);
+      end if;
+
+      if not Subtypes_Statically_Compatible (New_Type, Old_Type) then
+         Error_Msg_N
+           ("subtype must be statically compatible with parent discriminant",
+            New_Disc);
+
+         if not Predicates_Compatible (New_Type, Old_Type) then
+            Error_Msg_N
+              ("\subtype predicate is not compatible with parent discriminant",
+               New_Disc);
+         end if;
+      end if;
+   end Check_Constraining_Discriminant;
+
    ------------------------------------
    -- Check_CPP_Type_Has_No_Defaults --
    ------------------------------------
@@ -11793,7 +11940,7 @@ package body Sem_Ch3 is
       --  In gnatc or gnatprove mode, make sure set Do_Range_Check flag gets
       --  set unless we can be sure that no range check is required.
 
-      if (GNATprove_Mode or not Expander_Active)
+      if not Expander_Active
         and then Is_Scalar_Type (T)
         and then not Is_In_Range (Exp, T, Assume_Valid => True)
       then
@@ -15374,6 +15521,15 @@ package body Sem_Ch3 is
       while Present (Formal) loop
          New_Formal := New_Copy (Formal);
 
+         --  Extra formals are not inherited from a limited interface parent
+         --  since limitedness is not inherited in such case (AI-419) and this
+         --  affects the extra formals.
+
+         if Is_Limited_Interface (Parent_Type) then
+            Set_Extra_Formal (New_Formal, Empty);
+            Set_Extra_Accessibility (New_Formal, Empty);
+         end if;
+
          --  Normally we do not go copying parents, but in the case of
          --  formals, we need to link up to the declaration (which is the
          --  parameter specification), and it is fine to link up to the
@@ -15391,6 +15547,22 @@ package body Sem_Ch3 is
 
          Next_Formal (Formal);
       end loop;
+
+      --  Extra formals are shared between the parent subprogram and the
+      --  derived subprogram (implicit in the above copy of formals), unless
+      --  the parent type is a limited interface type; hence we must inherit
+      --  also the reference to the first extra formal. When the parent type is
+      --  an interface the extra formals will be added when the subprogram is
+      --  frozen (see Freeze.Freeze_Subprogram).
+
+      if not Is_Limited_Interface (Parent_Type) then
+         Set_Extra_Formals (New_Subp, Extra_Formals (Parent_Subp));
+
+         if Ekind (New_Subp) = E_Function then
+            Set_Extra_Accessibility_Of_Result (New_Subp,
+              Extra_Accessibility_Of_Result (Parent_Subp));
+         end if;
+      end if;
 
       --  If this derivation corresponds to a tagged generic actual, then
       --  primitive operations rename those of the actual. Otherwise the
@@ -15631,6 +15803,17 @@ package body Sem_Ch3 is
 
       if Ekind (New_Subp) = E_Function then
          Set_Mechanism (New_Subp, Mechanism (Parent_Subp));
+      end if;
+
+      --  Ada 2020 (AI12-0279): If a Yield aspect is specified True for a
+      --  primitive subprogram S of a type T, then the aspect is inherited
+      --  by the corresponding primitive subprogram of each descendant of T.
+
+      if Is_Tagged_Type (Derived_Type)
+        and then Is_Dispatching_Operation (New_Subp)
+        and then Has_Yield_Aspect (Alias (New_Subp))
+      then
+         Set_Has_Yield_Aspect (New_Subp, Has_Yield_Aspect (Alias (New_Subp)));
       end if;
    end Derive_Subprogram;
 
@@ -18681,7 +18864,9 @@ package body Sem_Ch3 is
       --  a component in a sibling package that is inherited from a visible
       --  component of a type in an ancestor package; the component in the
       --  sibling package should not be visible even though the component it
-      --  inherited from is visible). This does not apply however in the case
+      --  inherited from is visible), but instance bodies are not subject to
+      --  this second case since they have the Has_Private_View mechanism to
+      --  ensure proper visibility. This does not apply however in the case
       --  where the scope of the type is a private child unit, or when the
       --  parent comes from a local package in which the ancestor is currently
       --  visible. The latter suppression of visibility is needed for cases
@@ -18691,7 +18876,8 @@ package body Sem_Ch3 is
         or else
           (not Is_Private_Descendant (Type_Scope)
             and then not In_Open_Scopes (Type_Scope)
-            and then Has_Private_Declaration (Original_Type))
+            and then Has_Private_Declaration (Original_Type)
+            and then not In_Instance_Body)
       then
          --  If the type derives from an entity in a formal package, there
          --  are no additional visible components.
@@ -19842,7 +20028,7 @@ package body Sem_Ch3 is
             --  In gnatc or gnatprove mode, make sure set Do_Range_Check flag
             --  gets set unless we can be sure that no range check is required.
 
-            if (GNATprove_Mode or not Expander_Active)
+            if not Expander_Active
               and then not
                 Is_In_Range
                   (Expression (Discr), Discr_Type, Assume_Valid => True)

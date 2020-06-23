@@ -1179,9 +1179,8 @@ ix86_split_idivmod (machine_mode mode, rtx operands[],
   JUMP_LABEL (insn) = qimode_label;
 
   /* Generate original signed/unsigned divimod.  */
-  div = gen_divmod4_1 (operands[0], operands[1],
-		       operands[2], operands[3]);
-  emit_insn (div);
+  emit_insn (gen_divmod4_1 (operands[0], operands[1],
+			    operands[2], operands[3]));
 
   /* Branch to the end.  */
   emit_jump_insn (gen_jump (end_label));
@@ -1215,18 +1214,10 @@ ix86_split_idivmod (machine_mode mode, rtx operands[],
     }
 
   /* Extract remainder from AH.  */
-  tmp1 = gen_rtx_ZERO_EXTRACT (GET_MODE (operands[1]),
-			       tmp0, GEN_INT (8), GEN_INT (8));
-  if (REG_P (operands[1]))
-    insn = emit_move_insn (operands[1], tmp1);
-  else
-    {
-      /* Need a new scratch register since the old one has result
-	 of 8bit divide.  */
-      scratch = gen_reg_rtx (GET_MODE (operands[1]));
-      emit_move_insn (scratch, tmp1);
-      insn = emit_move_insn (operands[1], scratch);
-    }
+  scratch = gen_lowpart (GET_MODE (operands[1]), scratch);
+  tmp1 = gen_rtx_ZERO_EXTRACT (GET_MODE (operands[1]), scratch,
+			       GEN_INT (8), GEN_INT (8));
+  insn = emit_move_insn (operands[1], tmp1);
   set_unique_reg_note (insn, REG_EQUAL, mod);
 
   /* Zero extend quotient from AL.  */
@@ -7060,10 +7051,7 @@ promote_duplicated_reg (machine_mode mode, rtx val)
       rtx reg = convert_modes (mode, QImode, val, true);
 
       if (!TARGET_PARTIAL_REG_STALL)
-	if (mode == SImode)
-	  emit_insn (gen_insvsi_1 (reg, reg));
-	else
-	  emit_insn (gen_insvdi_1 (reg, reg));
+	emit_insn (gen_insv_1 (mode, reg, reg));
       else
 	{
 	  tmp = expand_simple_binop (mode, ASHIFT, reg, GEN_INT (8),
@@ -19529,6 +19517,105 @@ ix86_expand_vecmul_qihi (rtx dest, rtx op1, rtx op2)
   emit_insn (gen_rtx_SET (hdest, simplify_gen_binary (MULT, himode,
 						      hop1, hop2)));
   emit_insn (gen_truncate (dest, hdest));
+  return true;
+}
+
+/* Expand a vector operation shift by constant for a V*QImode in terms of the
+   same operation on V*HImode. Return true if success. */
+bool
+ix86_expand_vec_shift_qihi_constant (enum rtx_code code, rtx dest, rtx op1, rtx op2)
+{
+  machine_mode qimode, himode;
+  unsigned int and_constant, xor_constant;
+  HOST_WIDE_INT shift_amount;
+  rtx vec_const_and, vec_const_xor;
+  rtx tmp, op1_subreg;
+  rtx (*gen_shift) (rtx, rtx, rtx);
+  rtx (*gen_and) (rtx, rtx, rtx);
+  rtx (*gen_xor) (rtx, rtx, rtx);
+  rtx (*gen_sub) (rtx, rtx, rtx);
+
+  /* Only optimize shift by constant.  */
+  if (!CONST_INT_P (op2))
+    return false;
+
+  qimode = GET_MODE (dest);
+  shift_amount = INTVAL (op2);
+  /* Do nothing when shift amount greater equal 8.  */
+  if (shift_amount > 7)
+    return false;
+
+  gcc_assert (code == ASHIFT || code == ASHIFTRT || code == LSHIFTRT);
+  /* Record sign bit.  */
+  xor_constant = 1 << (8 - shift_amount - 1);
+
+  /* Zero upper/lower bits shift from left/right element.  */
+  and_constant
+    = (code == ASHIFT ? 256 - (1 << shift_amount)
+       : (1 << (8 - shift_amount)) - 1);
+
+  switch (qimode)
+    {
+    case V16QImode:
+      himode = V8HImode;
+      gen_shift =
+	((code == ASHIFT)
+	 ? gen_ashlv8hi3
+	 : (code == ASHIFTRT) ? gen_ashrv8hi3 : gen_lshrv8hi3);
+      gen_and = gen_andv16qi3;
+      gen_xor = gen_xorv16qi3;
+      gen_sub = gen_subv16qi3;
+      break;
+    case V32QImode:
+      himode = V16HImode;
+      gen_shift =
+	((code == ASHIFT)
+	 ? gen_ashlv16hi3
+	 : (code == ASHIFTRT) ? gen_ashrv16hi3 : gen_lshrv16hi3);
+      gen_and = gen_andv32qi3;
+      gen_xor = gen_xorv32qi3;
+      gen_sub = gen_subv32qi3;
+      break;
+    case V64QImode:
+      himode = V32HImode;
+      gen_shift =
+	((code == ASHIFT)
+	 ? gen_ashlv32hi3
+	 : (code == ASHIFTRT) ? gen_ashrv32hi3 : gen_lshrv32hi3);
+      gen_and = gen_andv64qi3;
+      gen_xor = gen_xorv64qi3;
+      gen_sub = gen_subv64qi3;
+      break;
+    default:
+      gcc_unreachable ();
+    }
+
+  tmp = gen_reg_rtx (himode);
+  vec_const_and = gen_reg_rtx (qimode);
+  op1_subreg = lowpart_subreg (himode, op1, qimode);
+
+  /* For ASHIFT and LSHIFTRT, perform operation like
+     vpsllw/vpsrlw $shift_amount, %op1, %dest.
+     vpand %vec_const_and, %dest.  */
+  emit_insn (gen_shift (tmp, op1_subreg, op2));
+  emit_move_insn (dest, simplify_gen_subreg (qimode, tmp, himode, 0));
+  emit_move_insn (vec_const_and,
+		  ix86_build_const_vector (qimode, true,
+					   GEN_INT (and_constant)));
+  emit_insn (gen_and (dest, dest, vec_const_and));
+
+  /* For ASHIFTRT, perform extra operation like
+     vpxor %vec_const_xor, %dest, %dest
+     vpsubb %vec_const_xor, %dest, %dest  */
+  if (code == ASHIFTRT)
+    {
+      vec_const_xor = gen_reg_rtx (qimode);
+      emit_move_insn (vec_const_xor,
+		      ix86_build_const_vector (qimode, true,
+					       GEN_INT (xor_constant)));
+      emit_insn (gen_xor (dest, dest, vec_const_xor));
+      emit_insn (gen_sub (dest, dest, vec_const_xor));
+    }
   return true;
 }
 

@@ -515,6 +515,79 @@ package body Exp_Ch3 is
       end loop;
    end Adjust_Discriminants;
 
+   ------------------------------------------
+   -- Build_Access_Subprogram_Wrapper_Body --
+   ------------------------------------------
+
+   procedure Build_Access_Subprogram_Wrapper_Body
+     (Decl     : Node_Id;
+      New_Decl : Node_Id)
+   is
+      Loc       : constant Source_Ptr := Sloc (Decl);
+      Actuals   : constant List_Id    := New_List;
+      Type_Def  : constant Node_Id    := Type_Definition (Decl);
+      Type_Id   : constant Entity_Id  := Defining_Identifier (Decl);
+      Spec_Node : constant Node_Id    :=
+                    New_Copy_Tree (Specification (New_Decl));
+
+      Act       : Node_Id;
+      Body_Node : Node_Id;
+      Call_Stmt : Node_Id;
+      Ptr       : Entity_Id;
+
+   begin
+      if not Expander_Active then
+         return;
+      end if;
+
+      Set_Defining_Unit_Name (Spec_Node,
+        Make_Defining_Identifier
+          (Loc, Chars (Defining_Unit_Name (Spec_Node))));
+
+      --  Create List of actuals for indirect call. The last parameter of the
+      --  subprogram is the access value itself.
+
+      Act := First (Parameter_Specifications (Spec_Node));
+
+      while Present (Act) loop
+         Append_To (Actuals,
+           Make_Identifier (Loc, Chars (Defining_Identifier (Act))));
+         Next (Act);
+         exit when Act = Last (Parameter_Specifications (Spec_Node));
+      end loop;
+
+      Ptr :=
+        Defining_Identifier
+          (Last (Parameter_Specifications (Spec_Node)));
+
+      if Nkind (Type_Def) = N_Access_Procedure_Definition then
+         Call_Stmt := Make_Procedure_Call_Statement (Loc,
+           Name =>
+              Make_Explicit_Dereference
+                (Loc, New_Occurrence_Of (Ptr, Loc)),
+           Parameter_Associations => Actuals);
+      else
+         Call_Stmt := Make_Simple_Return_Statement (Loc,
+           Expression =>
+             Make_Function_Call (Loc,
+           Name => Make_Explicit_Dereference
+                    (Loc, New_Occurrence_Of (Ptr, Loc)),
+           Parameter_Associations => Actuals));
+      end if;
+
+      Body_Node := Make_Subprogram_Body (Loc,
+        Specification => Spec_Node,
+        Declarations  => New_List,
+        Handled_Statement_Sequence =>
+          Make_Handled_Sequence_Of_Statements (Loc,
+            Statements    => New_List (Call_Stmt)));
+
+      --  Place body in list of freeze actions for the type.
+
+      Ensure_Freeze_Node (Type_Id);
+      Append_Freeze_Actions (Type_Id, New_List (Body_Node));
+   end Build_Access_Subprogram_Wrapper_Body;
+
    ---------------------------
    -- Build_Array_Init_Proc --
    ---------------------------
@@ -4691,6 +4764,47 @@ package body Exp_Ch3 is
       end if;
    end Clean_Task_Names;
 
+   ----------------------------------------
+   -- Ensure_Activation_Chain_And_Master --
+   ----------------------------------------
+
+   procedure Ensure_Activation_Chain_And_Master (Obj_Decl : Node_Id) is
+      Def_Id : constant Entity_Id := Defining_Identifier (Obj_Decl);
+      Expr   : constant Node_Id   := Expression (Obj_Decl);
+      Expr_Q : Node_Id;
+      Typ    : constant Entity_Id := Etype (Def_Id);
+
+   begin
+      pragma Assert (Nkind (Obj_Decl) = N_Object_Declaration);
+
+      if Has_Task (Typ) or else Might_Have_Tasks (Typ) then
+         Build_Activation_Chain_Entity (Obj_Decl);
+
+         if Has_Task (Typ) then
+            Build_Master_Entity (Def_Id);
+
+         --  Handle objects initialized with BIP function calls
+
+         elsif Present (Expr) then
+            if Nkind (Expr) = N_Qualified_Expression then
+               Expr_Q := Expression (Expr);
+            else
+               Expr_Q := Expr;
+            end if;
+
+            if Is_Build_In_Place_Function_Call (Expr_Q)
+              or else Present (Unqual_BIP_Iface_Function_Call (Expr_Q))
+              or else
+                (Nkind (Expr_Q) = N_Reference
+                   and then
+                 Is_Build_In_Place_Function_Call (Prefix (Expr_Q)))
+            then
+               Build_Master_Entity (Def_Id);
+            end if;
+         end if;
+      end if;
+   end Ensure_Activation_Chain_And_Master;
+
    ------------------------------
    -- Expand_Freeze_Array_Type --
    ------------------------------
@@ -6670,35 +6784,7 @@ package body Exp_Ch3 is
       --  also that a Master variable is established (and that the appropriate
       --  enclosing construct is established as a task master).
 
-      if Has_Task (Typ) or else Might_Have_Tasks (Typ) then
-         Build_Activation_Chain_Entity (N);
-
-         if Has_Task (Typ) then
-            Build_Master_Entity (Def_Id);
-
-         --  Handle objects initialized with BIP function calls
-
-         elsif Present (Expr) then
-            declare
-               Expr_Q : Node_Id := Expr;
-
-            begin
-               if Nkind (Expr) = N_Qualified_Expression then
-                  Expr_Q := Expression (Expr);
-               end if;
-
-               if Is_Build_In_Place_Function_Call (Expr_Q)
-                 or else Present (Unqual_BIP_Iface_Function_Call (Expr_Q))
-                 or else
-                   (Nkind (Expr_Q) = N_Reference
-                      and then
-                    Is_Build_In_Place_Function_Call (Prefix (Expr_Q)))
-               then
-                  Build_Master_Entity (Def_Id);
-               end if;
-            end;
-         end if;
-      end if;
+      Ensure_Activation_Chain_And_Master (N);
 
       --  If No_Implicit_Heap_Allocations or No_Implicit_Task_Allocations
       --  restrictions are active then default-sized secondary stacks are
@@ -7443,6 +7529,7 @@ package body Exp_Ch3 is
         and then Has_DIC (Typ)
         and then Present (DIC_Procedure (Typ))
         and then not Has_Init_Expression (N)
+        and then not Is_Imported (Def_Id)
       then
          declare
             DIC_Call : constant Node_Id := Build_DIC_Call (Loc, Def_Id, Typ);

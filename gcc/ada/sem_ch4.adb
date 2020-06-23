@@ -2216,18 +2216,94 @@ package body Sem_Ch4 is
    -- Analyze_Expression_With_Actions --
    -------------------------------------
 
+   --  Start of processing for Analyze_Quantified_Expression
+
    procedure Analyze_Expression_With_Actions (N : Node_Id) is
+
+      procedure Check_Action_OK (A : Node_Id);
+      --  Check that the action is something that is allows as a declare_item
+      --  of a declare_expression, except the checks are suppressed for
+      --  generated code.
+
+      procedure Check_Action_OK (A : Node_Id) is
+      begin
+         if not Comes_From_Source (N) or else not Comes_From_Source (A) then
+            return; -- Allow anything in generated code
+         end if;
+
+         case Nkind (A) is
+            when N_Object_Declaration =>
+               if Nkind (Object_Definition (A)) = N_Access_Definition then
+                  Error_Msg_N
+                    ("anonymous access type not allowed in declare_expression",
+                     Object_Definition (A));
+               end if;
+
+               if Aliased_Present (A) then
+                  Error_Msg_N ("aliased not allowed in declare_expression", A);
+               end if;
+
+               if Constant_Present (A)
+                 and then not Is_Limited_Type (Etype (Defining_Identifier (A)))
+               then
+                  return; -- nonlimited constants are OK
+               end if;
+
+            when N_Object_Renaming_Declaration =>
+               if Present (Access_Definition (A)) then
+                  Error_Msg_N
+                    ("anonymous access type not allowed in declare_expression",
+                     Access_Definition (A));
+               end if;
+
+               if not Is_Limited_Type (Etype (Defining_Identifier (A))) then
+                  return; -- ???For now; the RM rule is a bit more complicated
+               end if;
+
+            when others =>
+               null; -- Nothing else allowed, not even pragmas
+         end case;
+
+         Error_Msg_N ("object renaming or constant declaration expected", A);
+      end Check_Action_OK;
+
       A : Node_Id;
+      EWA_Scop : Entity_Id;
+
+   --  Start of processing for Analyze_Expression_With_Actions
 
    begin
+      --  Create a scope, which is needed to provide proper visibility of the
+      --  declare_items.
+
+      EWA_Scop := New_Internal_Entity (E_Block, Current_Scope, Sloc (N), 'B');
+      Set_Etype  (EWA_Scop, Standard_Void_Type);
+      Set_Scope  (EWA_Scop, Current_Scope);
+      Set_Parent (EWA_Scop, N);
+      Push_Scope (EWA_Scop);
+
+      --  If this Expression_With_Actions node comes from source, then it
+      --  represents a declare_expression; increment the counter to take note
+      --  of that.
+
+      if Comes_From_Source (N) then
+         In_Declare_Expr := In_Declare_Expr + 1;
+      end if;
+
       A := First (Actions (N));
       while Present (A) loop
          Analyze (A);
+         Check_Action_OK (A);
          Next (A);
       end loop;
 
       Analyze_Expression (Expression (N));
       Set_Etype (N, Etype (Expression (N)));
+      End_Scope;
+
+      if Comes_From_Source (N) then
+         In_Declare_Expr := In_Declare_Expr - 1;
+      end if;
    end Analyze_Expression_With_Actions;
 
    ---------------------------
@@ -2965,6 +3041,8 @@ package body Sem_Ch4 is
          end if;
       end Analyze_Set_Membership;
 
+      Op : Node_Id;
+
    --  Start of processing for Analyze_Membership_Op
 
    begin
@@ -3011,17 +3089,20 @@ package body Sem_Ch4 is
            and then Has_Compatible_Type (R, Etype (L))
          then
             if Nkind (N) = N_In then
-               Rewrite (N,
-                 Make_Op_Eq (Loc,
-                   Left_Opnd  => L,
-                   Right_Opnd => R));
+               Op := Make_Op_Eq (Loc, Left_Opnd  => L, Right_Opnd => R);
             else
-               Rewrite (N,
-                 Make_Op_Ne (Loc,
-                   Left_Opnd  => L,
-                   Right_Opnd => R));
+               Op := Make_Op_Ne (Loc, Left_Opnd  => L, Right_Opnd => R);
             end if;
 
+            if Is_Record_Or_Limited_Type (Etype (L)) then
+
+               --  We reset the Entity in order to use the primitive equality
+               --  of the type, as per RM 4.5.2 (28.1/4).
+
+               Set_Entity (Op, Empty);
+            end if;
+
+            Rewrite (N, Op);
             Analyze (N);
             return;
 
@@ -3198,7 +3279,7 @@ package body Sem_Ch4 is
       --  When the type Address is a visible integer type, and the DEC
       --  system extension is visible, the predefined operator may be
       --  hidden as well, by one of the address operations in auxdec.
-      --  Finally, The abstract operations on address do not hide the
+      --  Finally, the abstract operations on address do not hide the
       --  predefined operator (this is the purpose of making them abstract).
 
       -----------------------------------
@@ -3210,20 +3291,30 @@ package body Sem_Ch4 is
          T2 : Entity_Id) return Boolean
       is
          function Common_Type (T : Entity_Id) return Entity_Id;
-         --  Find non-private full view if any, without going to ancestor type
-         --  (as opposed to Underlying_Type).
+         --  Find non-private underlying full view if any, without going to
+         --  ancestor type (as opposed to Underlying_Type).
 
          -----------------
          -- Common_Type --
          -----------------
 
          function Common_Type (T : Entity_Id) return Entity_Id is
+            CT : Entity_Id;
+
          begin
-            if Is_Private_Type (T) and then Present (Full_View (T)) then
-               return Base_Type (Full_View (T));
-            else
-               return Base_Type (T);
+            CT := T;
+
+            if Is_Private_Type (CT) and then Present (Full_View (CT)) then
+               CT := Full_View (CT);
             end if;
+
+            if Is_Private_Type (CT)
+              and then Present (Underlying_Full_View (CT))
+            then
+               CT := Underlying_Full_View (CT);
+            end if;
+
+            return Base_Type (CT);
          end Common_Type;
 
       --  Start of processing for Compatible_Types_In_Predicate
@@ -3838,15 +3929,13 @@ package body Sem_Ch4 is
                  and then Is_Visible_Component (Comp, Sel)
                then
 
-                  --  AI05-105:  if the context is an object renaming with
+                  --  AI05-105: if the context is an object renaming with
                   --  an anonymous access type, the expected type of the
                   --  object must be anonymous. This is a name resolution rule.
 
                   if Nkind (Parent (N)) /= N_Object_Renaming_Declaration
                     or else No (Access_Definition (Parent (N)))
-                    or else Ekind (Etype (Comp)) = E_Anonymous_Access_Type
-                    or else
-                      Ekind (Etype (Comp)) = E_Anonymous_Access_Subprogram_Type
+                    or else Is_Anonymous_Access_Type (Etype (Comp))
                   then
                      Set_Entity (Sel, Comp);
                      Set_Etype (Sel, Etype (Comp));
@@ -5179,25 +5268,21 @@ package body Sem_Ch4 is
                   end loop;
 
                --  Another special case: the type is an extension of a private
-               --  type T, is an actual in an instance, and we are in the body
-               --  of the instance, so the generic body had a full view of the
-               --  type declaration for T or of some ancestor that defines the
-               --  component in question.
+               --  type T, either is an actual in an instance or is immediately
+               --  visible, and we are in the body of the instance, which means
+               --  the generic body had a full view of the type declaration for
+               --  T or some ancestor that defines the component in question.
+               --  This happens because Is_Visible_Component returned False on
+               --  this component, as T or the ancestor is still private since
+               --  the Has_Private_View mechanism is bypassed because T or the
+               --  ancestor is not directly referenced in the generic body.
 
                elsif Is_Derived_Type (Type_To_Use)
-                 and then Used_As_Generic_Actual (Type_To_Use)
+                 and then (Used_As_Generic_Actual (Type_To_Use)
+                            or else Is_Immediately_Visible (Type_To_Use))
                  and then In_Instance_Body
                then
                   Find_Component_In_Instance (Parent_Subtype (Type_To_Use));
-
-               --  In ASIS mode the generic parent type may be absent. Examine
-               --  the parent type directly for a component that may have been
-               --  visible in a parent generic unit.
-               --  ??? Revisit now that ASIS mode is gone
-
-               elsif Is_Derived_Type (Prefix_Type) then
-                  Par := Etype (Prefix_Type);
-                  Find_Component_In_Instance (Par);
                end if;
             end;
 
@@ -5595,54 +5680,47 @@ package body Sem_Ch4 is
 
    procedure Analyze_User_Defined_Binary_Op
      (N     : Node_Id;
-      Op_Id : Entity_Id)
-   is
+      Op_Id : Entity_Id) is
    begin
-      --  Only do analysis if the operator Comes_From_Source, since otherwise
-      --  the operator was generated by the expander, and all such operators
-      --  always refer to the operators in package Standard.
+      declare
+         F1 : constant Entity_Id := First_Formal (Op_Id);
+         F2 : constant Entity_Id := Next_Formal (F1);
 
-      if Comes_From_Source (N) then
-         declare
-            F1 : constant Entity_Id := First_Formal (Op_Id);
-            F2 : constant Entity_Id := Next_Formal (F1);
+      begin
+         --  Verify that Op_Id is a visible binary function. Note that since
+         --  we know Op_Id is overloaded, potentially use visible means use
+         --  visible for sure (RM 9.4(11)).
 
-         begin
-            --  Verify that Op_Id is a visible binary function. Note that since
-            --  we know Op_Id is overloaded, potentially use visible means use
-            --  visible for sure (RM 9.4(11)).
+         if Ekind (Op_Id) = E_Function
+           and then Present (F2)
+           and then (Is_Immediately_Visible (Op_Id)
+                      or else Is_Potentially_Use_Visible (Op_Id))
+           and then Has_Compatible_Type (Left_Opnd (N), Etype (F1))
+           and then Has_Compatible_Type (Right_Opnd (N), Etype (F2))
+         then
+            Add_One_Interp (N, Op_Id, Etype (Op_Id));
 
-            if Ekind (Op_Id) = E_Function
-              and then Present (F2)
-              and then (Is_Immediately_Visible (Op_Id)
-                         or else Is_Potentially_Use_Visible (Op_Id))
-              and then Has_Compatible_Type (Left_Opnd (N), Etype (F1))
-              and then Has_Compatible_Type (Right_Opnd (N), Etype (F2))
-            then
-               Add_One_Interp (N, Op_Id, Etype (Op_Id));
+            --  If the left operand is overloaded, indicate that the current
+            --  type is a viable candidate. This is redundant in most cases,
+            --  but for equality and comparison operators where the context
+            --  does not impose a type on the operands, setting the proper
+            --  type is necessary to avoid subsequent ambiguities during
+            --  resolution, when both user-defined and predefined operators
+            --  may be candidates.
 
-               --  If the left operand is overloaded, indicate that the current
-               --  type is a viable candidate. This is redundant in most cases,
-               --  but for equality and comparison operators where the context
-               --  does not impose a type on the operands, setting the proper
-               --  type is necessary to avoid subsequent ambiguities during
-               --  resolution, when both user-defined and predefined operators
-               --  may be candidates.
-
-               if Is_Overloaded (Left_Opnd (N)) then
-                  Set_Etype (Left_Opnd (N), Etype (F1));
-               end if;
-
-               if Debug_Flag_E then
-                  Write_Str ("user defined operator ");
-                  Write_Name (Chars (Op_Id));
-                  Write_Str (" on node ");
-                  Write_Int (Int (N));
-                  Write_Eol;
-               end if;
+            if Is_Overloaded (Left_Opnd (N)) then
+               Set_Etype (Left_Opnd (N), Etype (F1));
             end if;
-         end;
-      end if;
+
+            if Debug_Flag_E then
+               Write_Str ("user defined operator ");
+               Write_Name (Chars (Op_Id));
+               Write_Str (" on node ");
+               Write_Int (Int (N));
+               Write_Eol;
+            end if;
+         end if;
+      end;
    end Analyze_User_Defined_Binary_Op;
 
    -----------------------------------
@@ -6458,12 +6536,44 @@ package body Sem_Ch4 is
       Op_Id : Entity_Id;
       N     : Node_Id)
    is
-      Index : Interp_Index;
-      It    : Interp;
-      Found : Boolean := False;
-      I_F   : Interp_Index;
-      T_F   : Entity_Id;
-      Scop  : Entity_Id := Empty;
+      Index               : Interp_Index := 0;
+      It                  : Interp;
+      Found               : Boolean := False;
+      Is_Universal_Access : Boolean := False;
+      I_F                 : Interp_Index;
+      T_F                 : Entity_Id;
+      Scop                : Entity_Id := Empty;
+
+      procedure Check_Access_Attribute (N : Node_Id);
+      --  For any object, '[Unchecked_]Access of such object can never be
+      --  passed as a parameter of a call to the Universal_Access equality
+      --  operator.
+      --  This is because the expected type for Obj'Access in a call to
+      --  the Standard."=" operator whose formals are of type
+      --  Universal_Access is Universal_Integer, and Universal_Access
+      --  doesn't have a designated type. For more detail see RM 6.4.1(3)
+      --  and 3.10.2.
+      --  This procedure assumes that the context is a universal_access.
+
+      function Check_Access_Object_Types
+        (N : Node_Id; Typ : Entity_Id) return Boolean;
+      --  Check for RM 4.5.2 (9.6/2): When both are of access-to-object types,
+      --  the designated types shall be the same or one shall cover the other,
+      --  and if the designated types are elementary or array types, then the
+      --  designated subtypes shall statically match.
+      --  If N is not overloaded, then its unique type must be compatible as
+      --  per above. Otherwise iterate through the interpretations of N looking
+      --  for a compatible one.
+
+      procedure Check_Compatible_Profiles (N : Node_Id; Typ : Entity_Id);
+      --  Check for RM 4.5.2(9.7/2): When both are of access-to-subprogram
+      --  types, the designated profiles shall be subtype conformant.
+
+      function References_Anonymous_Access_Type
+        (N : Node_Id; Typ : Entity_Id) return Boolean;
+      --  Return True either if N is not overloaded and its Etype is an
+      --  anonymous access type or if one of the interpretations of N refers
+      --  to an anonymous access type compatible with Typ.
 
       procedure Try_One_Interp (T1 : Entity_Id);
       --  The context of the equality operator plays no role in resolving the
@@ -6472,12 +6582,200 @@ package body Sem_Ch4 is
       --  and an error can be emitted now, after trying to disambiguate, i.e.
       --  applying preference rules.
 
+      ----------------------------
+      -- Check_Access_Attribute --
+      ----------------------------
+
+      procedure Check_Access_Attribute (N : Node_Id) is
+      begin
+         if Nkind (N) = N_Attribute_Reference
+           and then Nam_In (Attribute_Name (N),
+                            Name_Access,
+                            Name_Unchecked_Access)
+         then
+            Error_Msg_N
+              ("access attribute cannot be used as actual for "
+               & "universal_access equality", N);
+         end if;
+      end Check_Access_Attribute;
+
+      -------------------------------
+      -- Check_Access_Object_Types --
+      -------------------------------
+
+      function Check_Access_Object_Types
+        (N : Node_Id; Typ : Entity_Id) return Boolean
+      is
+         function Check_Designated_Types (DT1, DT2 : Entity_Id) return Boolean;
+         --  Check RM 4.5.2 (9.6/2) on the given designated types.
+
+         ----------------------------
+         -- Check_Designated_Types --
+         ----------------------------
+
+         function Check_Designated_Types
+           (DT1, DT2 : Entity_Id) return Boolean is
+         begin
+            --  If the designated types are elementary or array types, then
+            --  the designated subtypes shall statically match.
+
+            if Is_Elementary_Type (DT1) or else Is_Array_Type (DT1) then
+               if Base_Type (DT1) /= Base_Type (DT2) then
+                  return False;
+               else
+                  return Subtypes_Statically_Match (DT1, DT2);
+               end if;
+
+            --  Otherwise, the designated types shall be the same or one
+            --  shall cover the other.
+
+            else
+               return DT1 = DT2
+                 or else Covers (DT1, DT2)
+                 or else Covers (DT2, DT1);
+            end if;
+         end Check_Designated_Types;
+
+      --  Start of processing for Check_Access_Object_Types
+
+      begin
+         --  Return immediately with no checks if Typ is not an
+         --  access-to-object type.
+
+         if not Is_Access_Object_Type (Typ) then
+            return True;
+
+         --  Any_Type is compatible with all types in this context, and is used
+         --  in particular for the designated type of a 'null' value.
+
+         elsif Directly_Designated_Type (Typ) = Any_Type
+           or else Nkind (N) = N_Null
+         then
+            return True;
+         end if;
+
+         if not Is_Overloaded (N) then
+            if Is_Access_Object_Type (Etype (N)) then
+               return Check_Designated_Types
+                 (Designated_Type (Typ), Designated_Type (Etype (N)));
+            end if;
+         else
+            declare
+               Typ_Is_Anonymous : constant Boolean :=
+                 Is_Anonymous_Access_Type (Typ);
+
+               I  : Interp_Index;
+               It : Interp;
+
+            begin
+               Get_First_Interp (N, I, It);
+               while Present (It.Typ) loop
+
+                  --  The check on designated types if only relevant when one
+                  --  of the types is anonymous, ignore other (non relevant)
+                  --  types.
+
+                  if (Typ_Is_Anonymous
+                       or else Is_Anonymous_Access_Type (It.Typ))
+                    and then Is_Access_Object_Type (It.Typ)
+                  then
+                     if Check_Designated_Types
+                          (Designated_Type (Typ), Designated_Type (It.Typ))
+                     then
+                        return True;
+                     end if;
+                  end if;
+
+                  Get_Next_Interp (I, It);
+               end loop;
+            end;
+         end if;
+
+         return False;
+      end Check_Access_Object_Types;
+
+      -------------------------------
+      -- Check_Compatible_Profiles --
+      -------------------------------
+
+      procedure Check_Compatible_Profiles (N : Node_Id; Typ : Entity_Id) is
+         I     : Interp_Index;
+         It    : Interp;
+         I1    : Interp_Index := 0;
+         Found : Boolean      := False;
+         Tmp   : Entity_Id    := Empty;
+
+      begin
+         if not Is_Overloaded (N) then
+            Check_Subtype_Conformant
+              (Designated_Type (Etype (N)), Designated_Type (Typ), N);
+         else
+            Get_First_Interp (N, I, It);
+            while Present (It.Typ) loop
+               if Is_Access_Subprogram_Type (It.Typ) then
+                  if not Found then
+                     Found := True;
+                     Tmp   := It.Typ;
+                     I1    := I;
+
+                  else
+                     It := Disambiguate (N, I1, I, Any_Type);
+
+                     if It /= No_Interp then
+                        Tmp := It.Typ;
+                        I1  := I;
+                     else
+                        Found := False;
+                        exit;
+                     end if;
+                  end if;
+               end if;
+
+               Get_Next_Interp (I, It);
+            end loop;
+
+            if Found then
+               Check_Subtype_Conformant
+                 (Designated_Type (Tmp), Designated_Type (Typ), N);
+            end if;
+         end if;
+      end Check_Compatible_Profiles;
+
+      --------------------------------------
+      -- References_Anonymous_Access_Type --
+      --------------------------------------
+
+      function References_Anonymous_Access_Type
+        (N : Node_Id; Typ : Entity_Id) return Boolean
+      is
+         I  : Interp_Index;
+         It : Interp;
+      begin
+         if not Is_Overloaded (N) then
+            return Is_Anonymous_Access_Type (Etype (N));
+         else
+            Get_First_Interp (N, I, It);
+            while Present (It.Typ) loop
+               if Is_Anonymous_Access_Type (It.Typ)
+                 and then (Covers (It.Typ, Typ) or else Covers (Typ, It.Typ))
+               then
+                  return True;
+               end if;
+
+               Get_Next_Interp (I, It);
+            end loop;
+
+            return False;
+         end if;
+      end References_Anonymous_Access_Type;
+
       --------------------
       -- Try_One_Interp --
       --------------------
 
       procedure Try_One_Interp (T1 : Entity_Id) is
-         Bas : Entity_Id;
+         Universal_Access : Boolean;
+         Bas              : Entity_Id;
 
       begin
          --  Perform a sanity check in case of previous errors
@@ -6496,6 +6794,9 @@ package body Sem_Ch4 is
 
          --  In Ada 2005, the equality operator for anonymous access types
          --  is declared in Standard, and preference rules apply to it.
+
+         Universal_Access := Is_Anonymous_Access_Type (T1)
+           or else References_Anonymous_Access_Type (R, T1);
 
          if Present (Scop) then
 
@@ -6517,48 +6818,28 @@ package body Sem_Ch4 is
             then
                null;
 
-            elsif Ekind (T1) = E_Anonymous_Access_Type
-              and then Scop = Standard_Standard
-            then
-               null;
+            elsif Scop /= Standard_Standard or else not Universal_Access then
 
-            else
                --  The scope does not contain an operator for the type
 
                return;
             end if;
 
          --  If we have infix notation, the operator must be usable. Within
-         --  an instance, if the type is already established we know it is
-         --  correct. If an operand is universal it is compatible with any
-         --  numeric type.
+         --  an instance, the type may have been immediately visible if the
+         --  types are compatible.
 
          elsif In_Open_Scopes (Scope (Bas))
            or else Is_Potentially_Use_Visible (Bas)
            or else In_Use (Bas)
            or else (In_Use (Scope (Bas)) and then not Is_Hidden (Bas))
-
-            --  In an instance, the type may have been immediately visible.
-            --  Either the types are compatible, or one operand is universal
-            --  (numeric or null).
-
            or else
              ((In_Instance or else In_Inlined_Body)
-                and then
-                  (First_Subtype (T1) = First_Subtype (Etype (R))
-                    or else Nkind (R) = N_Null
-                    or else
-                      (Is_Numeric_Type (T1)
-                        and then Is_Universal_Numeric_Type (Etype (R)))))
-
-           --  In Ada 2005, the equality on anonymous access types is declared
-           --  in Standard, and is always visible.
-
-           or else Ekind (T1) = E_Anonymous_Access_Type
+                and then Has_Compatible_Type (R, T1))
          then
             null;
 
-         else
+         elsif not Universal_Access then
             --  Save candidate type for subsequent error message, if any
 
             if not Is_Limited_Type (T1) then
@@ -6571,9 +6852,7 @@ package body Sem_Ch4 is
          --  Ada 2005 (AI-230): Keep restriction imposed by Ada 83 and 95:
          --  Do not allow anonymous access types in equality operators.
 
-         if Ada_Version < Ada_2005
-           and then Ekind (T1) = E_Anonymous_Access_Type
-         then
+         if Ada_Version < Ada_2005 and then Universal_Access then
             return;
          end if;
 
@@ -6591,9 +6870,10 @@ package body Sem_Ch4 is
          --  because that indicates the potential rewriting case where the
          --  interpretation to consider is actually "=" and the node may be
          --  about to be rewritten by Analyze_Equality_Op.
+         --  Finally, also check for RM 4.5.2 (9.6/2).
 
          if T1 /= Standard_Void_Type
-           and then Has_Compatible_Type (R, T1)
+           and then (Universal_Access or else Has_Compatible_Type (R, T1))
 
            and then
              ((not Is_Limited_Type (T1)
@@ -6608,6 +6888,9 @@ package body Sem_Ch4 is
              (Nkind (N) /= N_Op_Ne
                or else not Is_Tagged_Type (T1)
                or else Chars (Op_Id) = Name_Op_Eq)
+
+           and then (not Universal_Access
+                      or else Check_Access_Object_Types (R, T1))
          then
             if Found
               and then Base_Type (T1) /= Base_Type (T_F)
@@ -6621,12 +6904,14 @@ package body Sem_Ch4 is
 
                else
                   T_F := It.Typ;
+                  Is_Universal_Access := Universal_Access;
                end if;
 
             else
                Found := True;
                T_F   := T1;
                I_F   := Index;
+               Is_Universal_Access := Universal_Access;
             end if;
 
             if not Analyzed (L) then
@@ -6640,11 +6925,6 @@ package body Sem_Ch4 is
             if Etype (N) = Any_Type then
                Found := False;
             end if;
-
-         elsif Scop = Standard_Standard
-           and then Ekind (T1) = E_Anonymous_Access_Type
-         then
-            Found := True;
          end if;
       end Try_One_Interp;
 
@@ -6679,13 +6959,24 @@ package body Sem_Ch4 is
 
       if not Is_Overloaded (L) then
          Try_One_Interp (Etype (L));
-
       else
          Get_First_Interp (L, Index, It);
          while Present (It.Typ) loop
             Try_One_Interp (It.Typ);
             Get_Next_Interp (Index, It);
          end loop;
+      end if;
+
+      if Is_Universal_Access then
+         if Is_Access_Subprogram_Type (Etype (L))
+           and then Nkind (L) /= N_Null
+           and then Nkind (R) /= N_Null
+         then
+            Check_Compatible_Profiles (R, Etype (L));
+         end if;
+
+         Check_Access_Attribute (R);
+         Check_Access_Attribute (L);
       end if;
    end Find_Equality_Types;
 
@@ -8460,7 +8751,9 @@ package body Sem_Ch4 is
       --  Transform Obj.Operation (X, Y, ...) into Operation (Obj, X, Y ...).
       --  Call_Node is the resulting subprogram call, Node_To_Replace is
       --  either N or the parent of N, and Subprog is a reference to the
-      --  subprogram we are trying to match.
+      --  subprogram we are trying to match. Note that the transformation
+      --  may be partially destructive for the parent of N, so it needs to
+      --  be undone in the case where Try_Object_Operation returns false.
 
       function Try_Class_Wide_Operation
         (Call_Node       : Node_Id;
@@ -8731,7 +9024,7 @@ package body Sem_Ch4 is
             --  example:
             --            Some_Subprogram (..., Obj.Operation, ...)
 
-            and then Name (Parent_Node) = N
+            and then N = Name (Parent_Node)
          then
             Node_To_Replace := Parent_Node;
 
@@ -9769,8 +10062,20 @@ package body Sem_Ch4 is
          return True;
 
       else
-         --  There was no candidate operation, so report it as an error
-         --  in the caller: Analyze_Selected_Component.
+         --  There was no candidate operation, but Analyze_Selected_Component
+         --  may continue the analysis so we need to undo the change possibly
+         --  made to the Parent of N earlier by Transform_Object_Operation.
+
+         declare
+            Parent_Node : constant Node_Id := Parent (N);
+
+         begin
+            if Node_To_Replace = Parent_Node then
+               Remove (First (Parameter_Associations (New_Call_Node)));
+               Set_Parent
+                 (Parameter_Associations (New_Call_Node), Parent_Node);
+            end if;
+         end;
 
          return False;
       end if;

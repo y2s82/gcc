@@ -1631,6 +1631,7 @@ OBJS = \
 	tree-streamer-out.o \
 	tree-tailcall.o \
 	tree-vect-generic.o \
+	gimple-isel.o \
 	tree-vect-patterns.o \
 	tree-vect-data-refs.o \
 	tree-vect-stmts.o \
@@ -1762,22 +1763,16 @@ SELFTEST_DEPS = $(GCC_PASSES) stmp-int-hdrs $(srcdir)/testsuite/selftests
 gnat_install_lib = @gnat_install_lib@
 
 # per-language makefile fragments
-ifneq ($(LANG_MAKEFRAGS),)
-include $(LANG_MAKEFRAGS)
-endif
+-include $(LANG_MAKEFRAGS)
 
 # target and host overrides must follow the per-language makefile fragments
 # so they can override or augment language-specific variables
 
 # target overrides
-ifneq ($(tmake_file),)
-include $(tmake_file)
-endif
+-include $(tmake_file)
 
 # host overrides
-ifneq ($(xmake_file),)
-include $(xmake_file)
-endif
+-include $(xmake_file)
 
 # all-tree.def includes all the tree.def files.
 all-tree.def: s-alltree; @true
@@ -2600,6 +2595,7 @@ GTFILES = $(CPPLIB_H) $(srcdir)/input.h $(srcdir)/coretypes.h \
   $(srcdir)/dwarf2cfi.c \
   $(srcdir)/dwarf2out.c \
   $(srcdir)/tree-vect-generic.c \
+  $(srcdir)/gimple-isel.cc \
   $(srcdir)/dojump.c $(srcdir)/emit-rtl.h \
   $(srcdir)/emit-rtl.c $(srcdir)/except.h $(srcdir)/explow.c $(srcdir)/expr.c \
   $(srcdir)/expr.h \

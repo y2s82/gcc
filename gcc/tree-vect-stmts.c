@@ -820,14 +820,6 @@ vect_model_simple_cost (vec_info *,
 	prologue_cost += record_stmt_cost (cost_vec, 1, scalar_to_vec,
 					   stmt_info, 0, vect_prologue);
 
-  /* Adjust for two-operator SLP nodes.  */
-  if (node && SLP_TREE_TWO_OPERATORS (node))
-    {
-      ncopies *= 2;
-      inside_cost += record_stmt_cost (cost_vec, ncopies, vec_perm,
-				       stmt_info, 0, vect_body);
-    }
-
   /* Pass the inside-of-loop statements to the target-specific cost model.  */
   inside_cost += record_stmt_cost (cost_vec, ncopies, kind,
 				   stmt_info, 0, vect_body);
@@ -2846,33 +2838,26 @@ vect_get_strided_load_store_ops (stmt_vec_info stmt_info,
 				 tree *dataref_bump, tree *vec_offset)
 {
   struct data_reference *dr = STMT_VINFO_DATA_REF (stmt_info);
-  class loop *loop = LOOP_VINFO_LOOP (loop_vinfo);
   tree vectype = STMT_VINFO_VECTYPE (stmt_info);
-  gimple_seq stmts;
 
   tree bump = size_binop (MULT_EXPR,
 			  fold_convert (sizetype, unshare_expr (DR_STEP (dr))),
 			  size_int (TYPE_VECTOR_SUBPARTS (vectype)));
-  *dataref_bump = force_gimple_operand (bump, &stmts, true, NULL_TREE);
-  if (stmts)
-    gsi_insert_seq_on_edge_immediate (loop_preheader_edge (loop), stmts);
+  *dataref_bump = cse_and_gimplify_to_preheader (loop_vinfo, bump);
 
   /* The offset given in GS_INFO can have pointer type, so use the element
      type of the vector instead.  */
-  tree offset_type = TREE_TYPE (gs_info->offset);
-  offset_type = TREE_TYPE (gs_info->offset_vectype);
+  tree offset_type = TREE_TYPE (gs_info->offset_vectype);
 
   /* Calculate X = DR_STEP / SCALE and convert it to the appropriate type.  */
   tree step = size_binop (EXACT_DIV_EXPR, unshare_expr (DR_STEP (dr)),
 			  ssize_int (gs_info->scale));
   step = fold_convert (offset_type, step);
-  step = force_gimple_operand (step, &stmts, true, NULL_TREE);
 
   /* Create {0, X, X*2, X*3, ...}.  */
-  *vec_offset = gimple_build (&stmts, VEC_SERIES_EXPR, gs_info->offset_vectype,
-			      build_zero_cst (offset_type), step);
-  if (stmts)
-    gsi_insert_seq_on_edge_immediate (loop_preheader_edge (loop), stmts);
+  tree offset = fold_build2 (VEC_SERIES_EXPR, gs_info->offset_vectype,
+			     build_zero_cst (offset_type), step);
+  *vec_offset = cse_and_gimplify_to_preheader (loop_vinfo, offset);
 }
 
 /* Return the amount that should be added to a vector pointer to move
@@ -9937,8 +9922,12 @@ vectorizable_condition (vec_info *vinfo,
 	{
 	  vec_cond_rhs = vec_oprnds1[i];
 	  if (bitop1 == NOP_EXPR)
-	    vec_compare = build2 (cond_code, vec_cmp_type,
-				  vec_cond_lhs, vec_cond_rhs);
+	    {
+	      gimple_seq stmts = NULL;
+	      vec_compare = gimple_build (&stmts, cond_code, vec_cmp_type,
+					   vec_cond_lhs, vec_cond_rhs);
+	      gsi_insert_before (gsi, stmts, GSI_SAME_STMT);
+	    }
 	  else
 	    {
 	      new_temp = make_ssa_name (vec_cmp_type);
@@ -11226,15 +11215,18 @@ vect_is_simple_use (vec_info *vinfo, stmt_vec_info stmt, slp_tree slp_node,
     {
       slp_tree child = SLP_TREE_CHILDREN (slp_node)[operand];
       *slp_def = child;
+      *vectype = SLP_TREE_VECTYPE (child);
       if (SLP_TREE_DEF_TYPE (child) == vect_internal_def)
-	*op = gimple_get_lhs (SLP_TREE_REPRESENTATIVE (child)->stmt);
+	{
+	  *op = gimple_get_lhs (SLP_TREE_REPRESENTATIVE (child)->stmt);
+	  return vect_is_simple_use (*op, vinfo, dt, def_stmt_info_out);
+	}
       else
 	{
 	  if (def_stmt_info_out)
 	    *def_stmt_info_out = NULL;
 	  *op = SLP_TREE_SCALAR_OPS (child)[0];
 	  *dt = SLP_TREE_DEF_TYPE (child);
-	  *vectype = SLP_TREE_VECTYPE (child);
 	  return true;
 	}
     }
@@ -11265,11 +11257,8 @@ vect_is_simple_use (vec_info *vinfo, stmt_vec_info stmt, slp_tree slp_node,
 	}
       else
 	gcc_unreachable ();
+      return vect_is_simple_use (*op, vinfo, dt, vectype, def_stmt_info_out);
     }
-
-  /* ???  We might want to update *vectype from *slp_def here though
-     when sharing nodes this would prevent unsharing in the caller.  */
-  return vect_is_simple_use (*op, vinfo, dt, vectype, def_stmt_info_out);
 }
 
 /* If OP is not NULL and is external or constant update its vector

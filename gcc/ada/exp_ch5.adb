@@ -441,7 +441,7 @@ package body Exp_Ch5 is
       --  respect to the right-hand side as given, not a possible underlying
       --  renamed object, since this would generate incorrect extra checks.
 
-      Apply_Length_Check (Rhs, L_Type);
+      Apply_Length_Check_On_Assignment (Rhs, L_Type, Lhs);
 
       --  We start by assuming that the move can be done in either direction,
       --  i.e. that the two sides are completely disjoint.
@@ -2447,37 +2447,7 @@ package body Exp_Ch5 is
             if Is_Constrained (Etype (Lhs)) then
                Apply_Length_Check (Rhs, Etype (Lhs));
             end if;
-
-            if Nkind (Rhs) = N_Allocator then
-               declare
-                  Target_Typ : constant Entity_Id := Etype (Expression (Rhs));
-                  C_Es       : Check_Result;
-
-               begin
-                  C_Es :=
-                    Get_Range_Checks
-                      (Lhs,
-                       Target_Typ,
-                       Etype (Designated_Type (Etype (Lhs))));
-
-                  Insert_Range_Checks
-                    (C_Es,
-                     N,
-                     Target_Typ,
-                     Sloc (Lhs));
-               end;
-            end if;
          end if;
-
-      --  Apply range check for access type case
-
-      elsif Is_Access_Type (Etype (Lhs))
-        and then Nkind (Rhs) = N_Allocator
-        and then Nkind (Expression (Rhs)) = N_Qualified_Expression
-      then
-         Analyze_And_Resolve (Expression (Rhs));
-         Apply_Range_Check
-           (Expression (Rhs), Designated_Type (Etype (Lhs)));
       end if;
 
       --  Ada 2005 (AI-231): Generate the run-time check
@@ -3741,7 +3711,7 @@ package body Exp_Ch5 is
                --  specific to pure if statements, however (see
                --  Sem_Ch5.Analyze_If_Statement).
 
-               Set_Comes_From_Source (New_If, Comes_From_Source (N));
+               Preserve_Comes_From_Source (New_If, N);
                return;
 
             --  No special processing for that elsif part, move to next
@@ -3891,8 +3861,6 @@ package body Exp_Ch5 is
       Dim1       : Int;
       Ind_Comp   : Node_Id;
       Iterator   : Entity_Id;
-
-   --  Start of processing for Expand_Iterator_Loop_Over_Array
 
    begin
       --  for Element of Array loop
