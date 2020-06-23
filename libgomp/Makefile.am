@@ -20,7 +20,7 @@ AM_CPPFLAGS = $(addprefix -I, $(search_path))
 AM_CFLAGS = $(XCFLAGS)
 AM_LDFLAGS = $(XLDFLAGS) $(SECTION_LDFLAGS) $(OPT_LDFLAGS)
 
-toolexeclib_LTLIBRARIES = libgomp.la
+toolexeclib_LTLIBRARIES = libgomp.la libgompd.la
 nodist_toolexeclib_HEADERS = libgomp.spec
 
 if LIBGOMP_BUILD_VERSIONED_SHLIB
@@ -66,6 +66,12 @@ libgomp_la_SOURCES = alloc.c atomic.c barrier.c critical.c env.c error.c \
 	splay-tree.c libgomp-plugin.c oacc-parallel.c oacc-host.c oacc-init.c \
 	oacc-mem.c oacc-async.c oacc-plugin.c oacc-cuda.c priority_queue.c \
 	affinity-fmt.c teams.c allocator.c oacc-profiling.c oacc-target.c
+
+libgompd_la_LDFLAGS = $(libgomp_version_info) $(libgomp_version_script) \
+        $(lt_host_flags)
+libgompd_la_DEPENDENCIES = $(libgomp_version_dep)
+libgompd_la_LINK = $(LINK) $(libgomp_la_LDFLAGS)
+libgompd_la_SOURCES = libgompd.c
 
 include $(top_srcdir)/plugin/Makefrag.am
 
