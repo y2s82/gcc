@@ -1,5 +1,4 @@
-#include <string.h>
-#include <stdlib.h>
+#include <stddef.h>
 #include "omp-tools.h"
 #include "libgompd.h"
 #include "plugin-suffix.h"
