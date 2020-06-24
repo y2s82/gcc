@@ -71,7 +71,7 @@ libgompd_la_LDFLAGS = $(libgomp_version_info) $(libgomp_version_script) \
         $(lt_host_flags)
 libgompd_la_DEPENDENCIES = $(libgomp_version_dep)
 libgompd_la_LINK = $(LINK) $(libgomp_la_LDFLAGS)
-libgompd_la_SOURCES = libgompd.c
+libgompd_la_SOURCES = ompd-lib.c
 
 include $(top_srcdir)/plugin/Makefrag.am
 
