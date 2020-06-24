@@ -101,7 +101,7 @@ typedef struct ompd_device_type_sizes_t {
 } ompd_device_type_sizes_t;
 
 
-const char **ompd_dll_locations;
+//const char **ompd_dll_locations;
 
 void ompd_dll_locations_valid (void) __GOMPD_NOTHROW;
 
