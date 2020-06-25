@@ -1,0 +1,10 @@
+OMPD_5.0 {
+  global:
+	ompd_dll_locations_valid;
+	ompd_initialize;
+	ompd_get_api_version;
+	ompd_get_version_string;
+	ompd_get_finalize;
+  local:
+	*;
+};
