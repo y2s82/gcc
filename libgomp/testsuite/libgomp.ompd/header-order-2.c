@@ -1,7 +1,11 @@
 /*  Test that the omp-tools.h will compile successfully with omp.h .  */
 
-/* { dg-do run } */
+/* { dg-do compile } */
 #include "omp.h"
 #include "omp-tools.h"
 
-int main(void){ return 0; }
+int
+main ()
+{
+  return 0;
+}
