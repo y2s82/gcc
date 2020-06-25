@@ -52,15 +52,12 @@ ompd_get_version_string (const char **string)
 ompd_rc_t
 ompd_initialize (ompd_word_t api_version, const ompd_callbacks_t *callbacks)
 {
-  /* initialized flag */
   static int ompd_initialized = 0;
 
   if (ompd_initialized)
     return ompd_rc_error;
 
-  /* initialize here */
 
-  /* set initialized flag */
   ompd_initialized = 1;
 
   return ompd_rc_ok;
