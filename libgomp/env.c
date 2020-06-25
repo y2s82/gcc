@@ -1352,12 +1352,26 @@ handle_omp_display_env (unsigned long stacksize, int wait_policy)
   fputs ("OPENMP DISPLAY ENVIRONMENT END\n", stderr);
 }
 
+static const char *gompd_dll_locations[2] = { "libgompd" SONAME_SUFFIX (1), NULL };
+const char **ompd_dll_locations = gompd_dll_locations;
+
+#ifndef HAVE_ATTRIBUTE_ALIAS
+void __attribute__((noipa))
+ompd_dll_locations_valid (void)
+{
+}
+#endif
 
 static void __attribute__((constructor))
 initialize_env (void)
 {
   unsigned long thread_limit_var, stacksize = GOMP_DEFAULT_STACKSIZE;
   int wait_policy;
+
+
+#ifndef HAVE_ATTRIBUTE_ALIAS
+  ompd_dll_locations_valid ();
+#endif
 
   /* Do a compile time check that mkomp_h.pl did good job.  */
   omp_check_defines ();
@@ -1489,7 +1503,8 @@ initialize_env (void)
   goacc_profiling_initialize ();
 }
 
-static const char *gompd_dll_locations[2] = { "libgompd" SONAME_SUFFIX (1), NULL };
-const char **ompd_dll_locations = gompd_dll_locations;
+#ifdef HAVE_ATTRIBUTE_ALIAS
+strong_alias (initialize_env, ompd_dll_locations_valid)
+#endif
 
 #endif /* LIBGOMP_OFFLOADED_ONLY */
