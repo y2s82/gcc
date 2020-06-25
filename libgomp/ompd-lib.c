@@ -34,7 +34,7 @@
 
 const char *ompd_dll_locations[2] = { "libgompd" SONAME_SUFFIX (1), NULL };
 
-ompd_rc_t 
+ompd_rc_t
 ompd_get_api_version (ompd_word_t *version)
 {
   *version = OMPD_VERSION;
@@ -48,7 +48,7 @@ ompd_get_version_string (const char **string)
   return ompd_rc_ok;
 }
 
-ompd_rc_t 
+ompd_rc_t
 ompd_initialize (ompd_word_t api_version, const ompd_callbacks_t *callbacks)
 {
   /* initialized flag */

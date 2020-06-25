@@ -23,7 +23,7 @@
    see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    <http://www.gnu.org/licenses/>.  */
 
-/* This file contains various macros and auxiliary function declarations 
+/* This file contains various macros and auxiliary function declarations
    for OMPD library.  */
 
 #ifndef LIBGOMPD_H
