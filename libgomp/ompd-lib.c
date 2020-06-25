@@ -26,13 +26,8 @@
 /* This file contains function definitions for OMPD's per-library functions
    defined in the OpenMP 5.0 API Documentation, 5.5.1.  */
 
-#include <stddef.h>
 #include "omp-tools.h"
 #include "libgompd.h"
-#include "plugin-suffix.h"
-
-
-const char *ompd_dll_locations[2] = { "libgompd" SONAME_SUFFIX (1), NULL };
 
 ompd_rc_t
 ompd_get_api_version (ompd_word_t *version)
@@ -57,6 +52,8 @@ ompd_initialize (ompd_word_t api_version, const ompd_callbacks_t *callbacks)
   if (ompd_initialized)
     return ompd_rc_error;
 
+  (void) api_version;
+  (void) callbacks;
 
   ompd_initialized = 1;
 

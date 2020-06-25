@@ -32,6 +32,8 @@
 #include <limits.h>
 #ifndef LIBGOMP_OFFLOADED_ONLY
 #include "libgomp_f.h"
+#include "libgompd.h"
+#include "plugin-suffix.h"
 #include "oacc-int.h"
 #include <ctype.h>
 #include <stdlib.h>
@@ -1486,4 +1488,8 @@ initialize_env (void)
 
   goacc_profiling_initialize ();
 }
+
+static const char *gompd_dll_locations[2] = { "libgompd" SONAME_SUFFIX (1), NULL };
+const char **ompd_dll_locations = gompd_dll_locations;
+
 #endif /* LIBGOMP_OFFLOADED_ONLY */
