@@ -40,7 +40,7 @@ ompd_rc_t
 ompd_get_version_string (const char **string)
 {
   *string = "GNU OpenMP Runtime implementing OpenMP 5.0 "
-		ompd_stringify (OMPD_VERSION);
+	    ompd_stringify (OMPD_VERSION);
   return ompd_rc_ok;
 }
 
