@@ -553,3 +553,9 @@ GOMP_PLUGIN_1.3 {
 	GOMP_PLUGIN_goacc_profiling_dispatch;
 	GOMP_PLUGIN_goacc_thread;
 } GOMP_PLUGIN_1.2;
+
+OMPD_5.0 {
+  global:
+	ompd_dll_locations;
+	ompd_dll_locations_valid;
+};

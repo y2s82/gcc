@@ -1,5 +1,5 @@
-/* Copyright (C) 2015-2020 Free Software Foundation, Inc.
-   Contributed by Jack Howarth <howarth.at.gcc@gmail.com>
+/* Copyright (C) 2020 Free Software Foundation, Inc.
+   Contributed by Yoosuk Sim <y2s1982@gmail.com>.
 
    This file is part of the GNU Offloading and Multi Processing Library
    (libgomp).
@@ -23,4 +23,15 @@
    see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    <http://www.gnu.org/licenses/>.  */
 
-#define SONAME_SUFFIX(n) "." #n ".dylib"
+/* This file contains various macros and auxiliary function declarations
+   for OMPD library.  */
+
+#ifndef LIBGOMPD_H
+#define LIBGOMPD_H 1
+
+#define ompd_stringify(x) ompd_str2(x)
+#define ompd_str2(x) #x
+
+#define OMPD_VERSION 201811
+
+#endif /* LIBGOMPD_H */

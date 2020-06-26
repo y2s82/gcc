@@ -1,5 +1,5 @@
-/* Copyright (C) 2015-2020 Free Software Foundation, Inc.
-   Contributed by Jack Howarth <howarth.at.gcc@gmail.com>
+/* Copyright (C) 2020 Free Software Foundation, Inc.
+   Contributed by Yoosuk Sim <y2s1982@gmail.com>.
 
    This file is part of the GNU Offloading and Multi Processing Library
    (libgomp).
@@ -23,4 +23,39 @@
    see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
    <http://www.gnu.org/licenses/>.  */
 
-#define SONAME_SUFFIX(n) "." #n ".dylib"
+/* This file contains function definitions for OMPD's per-library functions
+   defined in the OpenMP 5.0 API Documentation, 5.5.1.  */
+
+#include "omp-tools.h"
+#include "libgompd.h"
+
+ompd_rc_t
+ompd_get_api_version (ompd_word_t *version)
+{
+  *version = OMPD_VERSION;
+  return ompd_rc_ok;
+}
+
+ompd_rc_t
+ompd_get_version_string (const char **string)
+{
+  *string = "GNU OpenMP Runtime implementing OpenMP 5.0 "
+	    ompd_stringify (OMPD_VERSION);
+  return ompd_rc_ok;
+}
+
+ompd_rc_t
+ompd_initialize (ompd_word_t api_version, const ompd_callbacks_t *callbacks)
+{
+  static int ompd_initialized = 0;
+
+  if (ompd_initialized)
+    return ompd_rc_error;
+
+  (void) api_version;
+  (void) callbacks;
+
+  ompd_initialized = 1;
+
+  return ompd_rc_ok;
+}
