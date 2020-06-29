@@ -9089,7 +9089,7 @@ proc check_effective_target_c++ { } {
  return 0
 }
 
-set cxx_default "c++14"
+set cxx_default "c++17"
 # Check whether the current active language standard supports the features
 # of C++11/C++14 by checking for the presence of one of the -std flags.
 # This assumes that the default for the compiler is $cxx_default, and that
@@ -9820,6 +9820,14 @@ proc check_effective_target_vect_max_reduc { } {
     return 0
 }
 
+# Return 1 if the compiler has been configured with nvptx offloading.
+
+proc check_effective_target_offload_nvptx { } {
+    return [check_no_compiler_messages offload_nvptx assembly {
+	int main () {return 0;}
+    } "-foffload=nvptx-none" ]
+}
+
 # Return 1 if the compiler has been configured with hsa offloading.
 
 proc check_effective_target_offload_hsa { } {
@@ -9828,7 +9836,7 @@ proc check_effective_target_offload_hsa { } {
     } "-foffload=hsa" ]
 }
 
-# Return 1 if the compiler has been configured with hsa offloading.
+# Return 1 if the compiler has been configured with gcn offloading.
 
 proc check_effective_target_offload_gcn { } {
     return [check_no_compiler_messages offload_gcn assembly {
