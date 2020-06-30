@@ -29,9 +29,13 @@
 #ifndef LIBGOMPD_H
 #define LIBGOMPD_H 1
 
+#include "omp-tools.h"
+
 #define ompd_stringify(x) ompd_str2(x)
 #define ompd_str2(x) #x
 
 #define OMPD_VERSION 201811
+
+ompd_callbacks_t* gompd_callbacks;
 
 #endif /* LIBGOMPD_H */
