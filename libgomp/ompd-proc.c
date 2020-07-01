@@ -28,6 +28,7 @@
 
 #include "omp-tools.h"
 #include "libgompd.h"
+#include "ompd-types.h"
 
 ompd_rc_t
 ompd_process_initialize (ompd_address_space_context_t *context,
@@ -35,7 +36,14 @@ ompd_process_initialize (ompd_address_space_context_t *context,
 {
   ompd_rc_t ret = (context) ? ompd_rc_ok : ompd_rc_bad_input;
   if (ret == ompd_rc_ok) {
+    ret = gompd_callbacks.alloc_memory(sizeof(ompd_address_space_handle_t),
+				  (void **)(handle));
   }
+
+  if (ret == ompd_rc_ok) {
+    (*handle)->context = context;
+  }
+
   return ret;
 }
 
