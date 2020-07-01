@@ -90,7 +90,7 @@ libgomp_la_SOURCES = alloc.c atomic.c barrier.c critical.c env.c error.c \
 	oacc-mem.c oacc-async.c oacc-plugin.c oacc-cuda.c priority_queue.c \
 	affinity-fmt.c teams.c allocator.c oacc-profiling.c oacc-target.c
 
-libgompd_la_SOURCES = ompd-lib.c
+libgompd_la_SOURCES = ompd-lib.c ompd-proc.c
 
 include $(top_srcdir)/plugin/Makefrag.am
 
