@@ -26,6 +26,7 @@
 /* This file contains function definitions for OMPD's per-process functions
    defined in the OpenMP 5.0 API Documentation, 5.5.2.  */
 
+#include <stdlib.h>
 #include "omp-tools.h"
 #include "libgompd.h"
 #include "ompd-types.h"
@@ -42,6 +43,7 @@ ompd_process_initialize (ompd_address_space_context_t *context,
 
   if (ret == ompd_rc_ok) {
     (*handle)->context = context;
+    (*handle)->id = NULL;
   }
 
   return ret;
@@ -62,8 +64,12 @@ ompd_device_initialize (ompd_address_space_handle_t *process_handle,
 ompd_rc_t
 ompd_rel_address_space_handle (ompd_address_space_handle_t *handle)
 {
-  ompd_rc_t ret = (handle) ? ompd_rc_ok : ompd_rc_bad_input;
-  if (ret == ompd_rc_ok) {
-  }
+  ompd_rc_t ret = (handle && (*handle).context) ? ompd_rc_ok : ompd_rc_bad_input;
+  if (ret == ompd_rc_ok)
+    ret = gompd_callbacks.free_memory((*handle).context);
+  if (ret == ompd_rc_ok && (*handle).id)
+    ret = gompd_callbacks.free_memory((*handle).id);
+  if (ret == ompd_rc_ok)
+    gompd_callbacks.free_memory(handle);
   return ret;
 }
