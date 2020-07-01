@@ -64,8 +64,8 @@ ompd_device_initialize (ompd_address_space_handle_t *process_handle,
 ompd_rc_t
 ompd_rel_address_space_handle (ompd_address_space_handle_t *handle)
 {
-  ompd_rc_t ret = (handle && (*handle).context) ? ompd_rc_ok : ompd_rc_bad_input;
-  if (ret == ompd_rc_ok)
+  ompd_rc_t ret = (handle) ? ompd_rc_ok : ompd_rc_bad_input;
+  if (ret == ompd_rc_ok && (*handle).context)
     ret = gompd_callbacks.free_memory((*handle).context);
   if (ret == ompd_rc_ok && (*handle).id)
     ret = gompd_callbacks.free_memory((*handle).id);
