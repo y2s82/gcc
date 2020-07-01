@@ -36,6 +36,6 @@
 
 #define OMPD_VERSION 201811
 
-ompd_callbacks_t* gompd_callbacks;
+extern ompd_callbacks_t gompd_callbacks;
 
 #endif /* LIBGOMPD_H */
