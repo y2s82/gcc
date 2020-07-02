@@ -29,6 +29,9 @@
 #include "omp-tools.h"
 #include "libgompd.h"
 
+ompd_callbacks_t gompd_callbacks;
+static int ompd_initialized = 0;
+
 ompd_rc_t
 ompd_get_api_version (ompd_word_t *version)
 {
@@ -47,15 +50,24 @@ ompd_get_version_string (const char **string)
 ompd_rc_t
 ompd_initialize (ompd_word_t api_version, const ompd_callbacks_t *callbacks)
 {
-  static int ompd_initialized = 0;
+  if (!callbacks)
+    return ompd_rc_bad_input;
 
   if (ompd_initialized)
     return ompd_rc_error;
 
+  gompd_callbacks = *callbacks;
+
   (void) api_version;
-  (void) callbacks;
 
   ompd_initialized = 1;
 
+  return ompd_rc_ok;
+}
+
+ompd_rc_t
+ompd_finalize (void)
+{
+  ompd_initialized = 0;
   return ompd_rc_ok;
 }
