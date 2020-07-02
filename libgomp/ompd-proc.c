@@ -44,6 +44,7 @@ ompd_process_initialize (ompd_address_space_context_t *context,
   if (ret == ompd_rc_ok) {
     (*handle)->context = context;
     (*handle)->id = NULL;
+    (*handle)->kind = OMPD_DEVICE_KIND_HOST;
   }
 
   return ret;
@@ -57,6 +58,16 @@ ompd_device_initialize (ompd_address_space_handle_t *process_handle,
 {
   ompd_rc_t ret = (process_handle && device_context && id) ? ompd_rc_ok : ompd_rc_bad_input;
   if (ret == ompd_rc_ok) {
+    ret = gompd_callbacks.alloc_memory (sizeof(ompd_address_space_handle_t), (void **)device_handle);
+  }
+  if (ret == ompd_rc_ok) {
+    ret = gompd_callbacks.alloc_memory (sizeof_id, (void *)(*device_handle)->id);
+  }
+  if (ret == ompd_rc_ok) {
+    (*device_handle)->context = device_context;
+    (*device_handle)->sizeof_id = sizeof_id;
+    (*device_handle)->kind = kind;
+    ret = gompd_callbacks.write_memory(device_context, NULL, id, sizeof_id, (*device_handle)->id);
   }
   return ret;
 }
