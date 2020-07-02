@@ -53,10 +53,10 @@ typedef struct ompd_cudathread_coord_t {
   ompd_addr_t cudaContext;
   ompd_addr_t warpSize;
   ompd_addr_t gridId;
-  ompd_dim3_t  gridDim;
-  ompd_dim3_t  blockDim;
-  ompd_dim3_t  blockIdx;
-  ompd_dim3_t  threadIdx;
+  ompd_dim3_t gridDim;
+  ompd_dim3_t blockDim;
+  ompd_dim3_t blockIdx;
+  ompd_dim3_t threadIdx;
 } ompd_cudathread_coord_t;
 
 /* Memory Access Segment definitions for Host and Target Devices */

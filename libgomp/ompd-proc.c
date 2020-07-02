@@ -33,63 +33,74 @@
 
 ompd_rc_t
 ompd_process_initialize (ompd_address_space_context_t *context,
-			ompd_address_space_handle_t **handle)
+			 ompd_address_space_handle_t **handle)
 {
-  ompd_rc_t ret = (context) ? ompd_rc_ok : ompd_rc_bad_input;
-  if (ret == ompd_rc_ok)
-  {
-    ret = gompd_callbacks.alloc_memory (sizeof (ompd_address_space_handle_t),
-				  (void **)(handle));
-  }
+  ompd_rc_t ret = (context && handle) ? ompd_rc_ok : ompd_rc_bad_input;
+  if (ret != ompd_rc_ok)
+    return ret;
 
-  if (ret == ompd_rc_ok)
-  {
-    (*handle)->context = context;
-    (*handle)->id = NULL;
-    (*handle)->kind = OMPD_DEVICE_KIND_HOST;
-  }
+  void *p = NULL;
+  ret = gompd_callbacks.alloc_memory (sizeof (ompd_address_space_handle_t), p);
+  if (ret != ompd_rc_ok)
+    return ret;
+
+  *handle = p;
+  (*handle)->context = context;
+  (*handle)->id = NULL;
+  (*handle)->kind = OMPD_DEVICE_KIND_HOST;
 
   return ret;
 }
 
 ompd_rc_t
 ompd_device_initialize (ompd_address_space_handle_t *process_handle,
-			 ompd_address_space_context_t *device_context,
-			 ompd_device_t kind, ompd_size_t sizeof_id, void *id,
+			ompd_address_space_context_t *device_context,
+			ompd_device_t kind, ompd_size_t sizeof_id, void *id,
 			ompd_address_space_handle_t **device_handle)
 {
-  ompd_rc_t ret = (process_handle && device_context && id) ? ompd_rc_ok :
-							    ompd_rc_bad_input;
-  if (ret == ompd_rc_ok)
-  {
-    ret = gompd_callbacks.alloc_memory (sizeof (ompd_address_space_handle_t),
-					(void **)device_handle);
-  }
-  if (ret == ompd_rc_ok)
-  {
-    ret = gompd_callbacks.alloc_memory (sizeof_id,
-					(void *)(*device_handle)->id);
-  }
-  if (ret == ompd_rc_ok)
-  {
-    (*device_handle)->context = device_context;
-    (*device_handle)->sizeof_id = sizeof_id;
-    (*device_handle)->kind = kind;
-    ret = gompd_callbacks.write_memory (device_context, NULL, id, sizeof_id,
-					(*device_handle)->id);
-  }
+  ompd_rc_t ret = (process_handle && device_context && device_handle && id) 
+		  ? ompd_rc_ok : ompd_rc_bad_input;
+
+  if (ret != ompd_rc_ok)
+    return ret;
+
+  void *p = NULL;
+  ret = gompd_callbacks.alloc_memory (sizeof (ompd_address_space_handle_t), p);
+  if (ret != ompd_rc_ok)
+    return ret;
+
+  *device_handle = p;
+  p = NULL;
+
+  ret = gompd_callbacks.alloc_memory (sizeof_id, p);
+  if (ret != ompd_rc_ok)
+    return ret;
+
+  (*device_handle)->id = p;
+
+  (*device_handle)->context = device_context;
+  (*device_handle)->sizeof_id = sizeof_id;
+  (*device_handle)->kind = kind;
+
+  ret = gompd_callbacks.write_memory (device_context, NULL, id, sizeof_id,
+				      (*device_handle)->id);
   return ret;
 }
 
 ompd_rc_t
 ompd_rel_address_space_handle (ompd_address_space_handle_t *handle)
 {
-  ompd_rc_t ret = (handle) ? ompd_rc_ok : ompd_rc_bad_input;
-  if (ret == ompd_rc_ok && (*handle).context)
-    ret = gompd_callbacks.free_memory ((*handle).context);
-  if (ret == ompd_rc_ok && (*handle).id)
-    ret = gompd_callbacks.free_memory ((*handle).id);
-  if (ret == ompd_rc_ok)
-    gompd_callbacks.free_memory (handle);
+  ompd_rc_t ret = handle ? ompd_rc_ok : ompd_rc_bad_input;
+  if (ret != ompd_rc_ok)
+    return ret;
+
+  if (handle->id)
+    {
+      ret = gompd_callbacks.free_memory (handle->id);
+      if (ret != ompd_rc_ok)
+        return ret;
+    }
+
+  ret = gompd_callbacks.free_memory (handle);
   return ret;
 }
