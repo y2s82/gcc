@@ -35,7 +35,7 @@ ompd_rc_t
 ompd_process_initialize (ompd_address_space_context_t *context,
 			 ompd_address_space_handle_t **handle)
 {
-  ompd_rc_t ret = handle ? ompd_rc_ok : ompd_rc_unavailable;
+  ompd_rc_t ret = handle ? ompd_rc_ok : ompd_rc_stale_handle;
   if (ret != ompd_rc_ok)
     return ret;
 
@@ -64,7 +64,7 @@ ompd_device_initialize (ompd_address_space_handle_t *process_handle,
 			ompd_address_space_handle_t **device_handle)
 {
   ompd_rc_t ret = process_handle && device_handle
-		  ? ompd_rc_ok : ompd_rc_unavailable;
+		  ? ompd_rc_ok : ompd_rc_stale_handle;
 
   if (ret != ompd_rc_ok)
     return ret;
@@ -116,7 +116,7 @@ ompd_rel_address_space_handle (ompd_address_space_handle_t *handle)
   if (handle->process_reference)
     {
       if (handle->process_reference->ref_count == 0)
-	return ompd_rc_stale_handle;
+	return ompd_rc_error;
       handle->process_reference->ref_count--;
     }
 
