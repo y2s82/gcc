@@ -30,6 +30,7 @@
 #include "omp-tools.h"
 #include "libgompd.h"
 #include "ompd-types.h"
+#include "ompd-helper.h"
 
 ompd_rc_t
 ompd_process_initialize (ompd_address_space_context_t *context,
@@ -49,8 +50,7 @@ ompd_process_initialize (ompd_address_space_context_t *context,
   *handle = p;
   (*handle)->context = context;
   (*handle)->kind = OMPD_DEVICE_KIND_HOST;
-  (*handle)->id = NULL;
-  (*handle)->sizeof_id = 0;
+  (*handle)->id = 0;
   (*handle)->process_reference = NULL;
   (*handle)->ref_count = 0;
 
@@ -79,19 +79,11 @@ ompd_device_initialize (ompd_address_space_handle_t *process_handle,
     return ret;
 
   *device_handle = p;
-  p = NULL;
 
-  ret = gompd_callbacks.alloc_memory (sizeof_id, p);
+  ret = gompd_get_gompd_device_id (id, sizeof_id, &(*device_handle)->id);
   if (ret != ompd_rc_ok)
     return ret;
 
-  (*device_handle)->id = p;
-
-  ret = gompd_callbacks.write_memory (device_context, NULL,
-				      (*device_handle)->id, sizeof_id, id);
-  if (ret != ompd_rc_ok)
-    return ret;
-  (*device_handle)->sizeof_id = sizeof_id;
   (*device_handle)->context = device_context;
   (*device_handle)->kind = kind;
   (*device_handle)->ref_count = 0;
@@ -118,13 +110,6 @@ ompd_rel_address_space_handle (ompd_address_space_handle_t *handle)
       if (handle->process_reference->ref_count == 0)
 	return ompd_rc_error;
       handle->process_reference->ref_count--;
-    }
-
-  if (handle->id)
-    {
-      ret = gompd_callbacks.free_memory (handle->id);
-      if (ret != ompd_rc_ok)
-	return ret;
     }
 
   ret = gompd_callbacks.free_memory (handle);

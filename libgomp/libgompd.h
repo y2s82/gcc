@@ -38,11 +38,12 @@
 
 extern ompd_callbacks_t gompd_callbacks;
 
+typedef __UINT64_TYPE__ _gompd_device_id;
+
 typedef struct _ompd_aspace_handle {
   ompd_address_space_context_t *context;
   ompd_device_t kind;
-  ompd_size_t sizeof_id;
-  void *id;
+  _gompd_device_id id;
   ompd_address_space_handle_t *process_reference;
   ompd_size_t ref_count;
 } ompd_address_space_handle_t;
