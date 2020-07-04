@@ -235,7 +235,7 @@ am_libgomp_la_OBJECTS = alloc.lo atomic.lo barrier.lo critical.lo \
 	$(am__objects_1)
 libgomp_la_OBJECTS = $(am_libgomp_la_OBJECTS)
 libgompd_la_LIBADD =
-am_libgompd_la_OBJECTS = ompd-lib.lo ompd-proc.lo
+am_libgompd_la_OBJECTS = ompd-lib.lo ompd-proc.lo ompd-helper.lo
 libgompd_la_OBJECTS = $(am_libgompd_la_OBJECTS)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -592,7 +592,7 @@ libgomp_la_SOURCES = alloc.c atomic.c barrier.c critical.c env.c \
 	oacc-async.c oacc-plugin.c oacc-cuda.c priority_queue.c \
 	affinity-fmt.c teams.c allocator.c oacc-profiling.c \
 	oacc-target.c $(am__append_4)
-libgompd_la_SOURCES = ompd-lib.c ompd-proc.c
+libgompd_la_SOURCES = ompd-lib.c ompd-proc.c ompd-helper.c
 
 # Nvidia PTX OpenACC plugin.
 @PLUGIN_NVPTX_TRUE@libgomp_plugin_nvptx_version_info = -version-info $(libtool_VERSION)
@@ -816,6 +816,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/oacc-plugin.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/oacc-profiling.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/oacc-target.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ompd-helper.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ompd-lib.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ompd-proc.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ordered.Plo@am__quote@
