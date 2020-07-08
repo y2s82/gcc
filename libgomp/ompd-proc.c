@@ -37,9 +37,9 @@ ompd_process_initialize (ompd_address_space_context_t *context,
 {
   ompd_rc_t ret;
 
-  if (!handle)
+  if (handle == NULL)
     return ompd_rc_stale_handle;
-  if (!context)
+  if (context == NULL)
     return ompd_rc_bad_input;
 
   void *p = NULL;
@@ -66,10 +66,10 @@ ompd_device_initialize (ompd_address_space_handle_t *process_handle,
 {
   ompd_rc_t ret;
 
-  if (!process_handle || !device_handle)
+  if (process_handle == NULL || device_handle == NULL)
     return ompd_rc_stale_handle;
 
-  if (!device_context || !id)
+  if (device_context == NULL || id == NULL)
     return ompd_rc_bad_input;
 
   void *p = NULL;
@@ -104,7 +104,7 @@ ompd_rc_t
 ompd_rel_address_space_handle (ompd_address_space_handle_t *handle)
 {
   ompd_rc_t ret;
-  if (!handle || !handle->context)
+  if (handle == NULL || handle->context == NULL)
     return ompd_rc_stale_handle;
 
   if (handle->ref_count != 0)
