@@ -86,10 +86,7 @@ ompd_device_initialize (ompd_address_space_handle_t *process_handle,
 
   (*device_handle)->id = p;
 
-  ret = gompd_callbacks.write_memory (device_context, NULL,
-				      (*device_handle)->id, sizeof_id, id);
-  if (ret != ompd_rc_ok)
-    return ret;
+
   (*device_handle)->sizeof_id = sizeof_id;
   (*device_handle)->context = device_context;
   (*device_handle)->kind = kind;
@@ -97,7 +94,7 @@ ompd_device_initialize (ompd_address_space_handle_t *process_handle,
   (*device_handle)->process_reference = process_handle;
   process_handle->ref_count++;
 
-  return ret;
+  return ompd_rc_error;
 }
 
 ompd_rc_t
