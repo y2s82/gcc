@@ -38,4 +38,13 @@
 
 extern ompd_callbacks_t gompd_callbacks;
 
+typedef struct _ompd_aspace_handle {
+  ompd_address_space_context_t *context;
+  ompd_device_t kind;
+  ompd_size_t sizeof_id;
+  void *id;
+  ompd_address_space_handle_t *process_reference;
+  ompd_size_t ref_count;
+} ompd_address_space_handle_t;
+
 #endif /* LIBGOMPD_H */
