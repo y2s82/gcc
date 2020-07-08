@@ -40,9 +40,20 @@ ompd_get_omp_version (ompd_address_space_handle_t *address_space,
   if (address_space == NULL)
     return ompd_rc_stale_handle;
 
-  return gompd_callbacks.symbol_addr_lookup (address_space->context, NULL,
-						      "openmp_version",
-						      omp_version, NULL);
+  /* _OPENMP macro is defined to have yyyymm integer.  */
+  ompd_size_t macro_length = sizeof (int);
+
+  ompd_rc_t ret = ompd_rc_ok;
+
+  struct ompd_address_t addr;
+  ret = gompd_callbacks.symbol_addr_lookup (address_space->context, NULL,
+					    "openmp_version", &addr, NULL);
+  if (ret != ompd_rc_ok)
+    return ret;
+
+  ret = gompd_callbacks.read_memory (address_space->context, NULL, &addr,
+				     macro_length, (void *) omp_version);
+  return ompd_rc_ok;
 }
 
 ompd_rc_t
