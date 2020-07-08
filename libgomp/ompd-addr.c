@@ -35,17 +35,26 @@ ompd_rc_t
 ompd_get_omp_version (ompd_address_space_handle_t *address_space,
 		      ompd_word_t *omp_version)
 {
-  ompd_rc_t ret = gompd_callbacks.symbol_addr_lookup (address_space->context,
-						      NULL,
+  if (omp_version == NULL)
+    return ompd_rc_bad_input;
+  if (address_space == NULL)
+    return ompd_rc_stale_handle;
+
+  return gompd_callbacks.symbol_addr_lookup (address_space->context, NULL,
 						      "openmp_version",
 						      omp_version, NULL);
-  return ret;
 }
 
 ompd_rc_t
 ompd_get_omp_version_string (ompd_address_space_handle_t *address_space,
 			     const char **string)
 {
+  if (string == NULL)
+    return ompd_rc_bad_input;
+
+  if (address_space == NULL)
+    return ompd_rc_stale_handle;
+
   ompd_word_t omp_version;
   ompd_rc_t ret = ompd_get_omp_version (address_space, &omp_version);
   if (ret != ompd_rc_ok)
