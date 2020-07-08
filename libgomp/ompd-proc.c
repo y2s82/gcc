@@ -125,6 +125,5 @@ ompd_rel_address_space_handle (ompd_address_space_handle_t *handle)
 	return ret;
     }
 
-  ret = gompd_callbacks.free_memory (handle);
-  return ret;
+  return gompd_callbacks.free_memory (handle);
 }
