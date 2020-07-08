@@ -64,6 +64,8 @@ ompd_device_initialize (ompd_address_space_handle_t *process_handle,
 			ompd_device_t kind, ompd_size_t sizeof_id, void *id,
 			ompd_address_space_handle_t **device_handle)
 {
+  /* FIXME: implementation require more association with gomp-plugin.  */
+
   ompd_rc_t ret;
 
   if (process_handle == NULL || device_handle == NULL)
@@ -86,6 +88,7 @@ ompd_device_initialize (ompd_address_space_handle_t *process_handle,
 
   (*device_handle)->id = p;
 
+  /* FIXME: implementation requires decision on id handling.  */
 
   (*device_handle)->sizeof_id = sizeof_id;
   (*device_handle)->context = device_context;
@@ -94,6 +97,7 @@ ompd_device_initialize (ompd_address_space_handle_t *process_handle,
   (*device_handle)->process_reference = process_handle;
   process_handle->ref_count++;
 
+  /* FIXME: currently returning error until implementation is fixed.  */
   return ompd_rc_error;
 }
 
