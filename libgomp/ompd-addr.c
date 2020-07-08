@@ -73,7 +73,7 @@ ompd_get_omp_version_string (ompd_address_space_handle_t *address_space,
 
   char *tmp = "GNU OpenMP Runtime implementing OpenMP 5.0 "
 	    ompd_stringify (omp_version);
-  size_t s = strlen(tmp) + 1;
+  size_t s = strlen (tmp) + 1;
 
   char *t = NULL;
   ret = gompd_callbacks.alloc_memory (s, (void *) t);
