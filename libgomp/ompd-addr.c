@@ -83,8 +83,8 @@ ompd_get_omp_version_string (ompd_address_space_handle_t *address_space,
   if (ret != ompd_rc_ok)
     return ret;
 
-  strcpy (t, tmp);
-  sprintf (t + tmp_length, "%ld", omp_version);
+  memcpy (t, tmp, tmp_length);
+  snprintf (t + tmp_length, macro_length, "%ld", omp_version);
 
   *string = t;
 
