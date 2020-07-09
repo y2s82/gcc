@@ -26,6 +26,7 @@
 /* This file contains function definitions for OMPD's Address Space Information
    functions defined in the OpenMP 5.0 API Documentation, 5.5.4.  */
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "omp-tools.h"
@@ -66,21 +67,24 @@ ompd_get_omp_version_string (ompd_address_space_handle_t *address_space,
   if (address_space == NULL)
     return ompd_rc_stale_handle;
 
+  ompd_size_t macro_length = 6; /* _OPENMP format: yyyymm.  */
   ompd_word_t omp_version;
   ompd_rc_t ret = ompd_get_omp_version (address_space, &omp_version);
   if (ret != ompd_rc_ok)
     return ret;
 
-  char *tmp = "GNU OpenMP Runtime implementing OpenMP 5.0 "
-	    ompd_stringify (omp_version);
-  size_t s = strlen (tmp) + 1;
+  char *tmp = "GNU OpenMP Runtime implementing OpenMP 5.0 ";
+  ompd_size_t tmp_length = strlen (tmp);
+
+  size_t total_length = tmp_length + macro_length + 1;
 
   char *t = NULL;
-  ret = gompd_callbacks.alloc_memory (s, (void *) t);
+  ret = gompd_callbacks.alloc_memory (total_length, (void *) t);
   if (ret != ompd_rc_ok)
     return ret;
 
   strcpy (t, tmp);
+  sprintf (t + tmp_length, "%ld", omp_version);
 
   *string = t;
 
