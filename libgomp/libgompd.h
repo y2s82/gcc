@@ -47,4 +47,22 @@ typedef struct _ompd_aspace_handle {
   ompd_size_t ref_count;
 } ompd_address_space_handle_t;
 
+ompd_rc_t gompd_getQuery (const char*, const char*, const char *);
+
+ompd_rc_t gompd_getVariableAddress (ompd_address_space_context_t *,
+                                    ompd_thread_context_t *, ompd_address_t *,
+                                    const char *, ompd_addr_t);
+
+ompd_rc_t gompd_getVariableValue (ompd_address_space_context_t *,
+                                    ompd_thread_context_t *, void *, ompd_address_t *,
+                                    const char *, ompd_addr_t);
+
+ompd_rc_t gompd_getMemberOffset (ompd_address_space_context_t *,
+                                    ompd_thread_context_t *, ompd_address_t *,
+                                    const char *, const char *, ompd_addr_t);
+
+ompd_rc_t gompd_getMemberValue (ompd_address_space_context_t *,
+                                    ompd_thread_context_t *, void *, ompd_address_t *,
+                                    const char *, const char *, ompd_addr_t);
+
 #endif /* LIBGOMPD_H */
