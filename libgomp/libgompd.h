@@ -59,12 +59,6 @@ typedef enum gompd_query_type {
 #undef GENERATE_ENUM
 } query_type;
 
-static const char *gompd_query_type_string[] = {
-#define GENERATE_STRING(STRING) ompd_stringify (STRING),
-  FOREACH_QUERYTYPE (GENERATE_STRING)
-#undef GENERATE_STRING
-};
-
 ompd_rc_t gompd_getQueryStringSize (size_t *, query_type, const char*, const char *);
 
 ompd_rc_t gompd_getQueryString (char **, query_type, const char*, const char *);

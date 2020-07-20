@@ -27,6 +27,12 @@
    
 #include "libgompd.h"
 
+static const char *gompd_query_type_string[] = {
+#define GENERATE_STRING(STRING) ompd_stringify (STRING),
+  FOREACH_QUERYTYPE (GENERATE_STRING)
+#undef GENERATE_STRING
+};
+
 ompd_rc_t
 gompd_getQueryStringSize (size_t *size, query_type type, const char* variableType,
 			  const char *memberType)
