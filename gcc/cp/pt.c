@@ -5986,7 +5986,6 @@ push_template_decl_real (tree decl, bool is_friend)
 
   gcc_checking_assert (DECL_TEMPLATE_RESULT (tmpl) == decl);
 
-
   if (new_template_p)
     {
       /* Push template declarations for global functions and types.
@@ -7257,7 +7256,8 @@ convert_nontype_argument (tree type, tree expr, tsubst_flags_t complain)
      For a non-type template-parameter of integral or enumeration type,
      integral promotions (_conv.prom_) and integral conversions
      (_conv.integral_) are applied.  */
-  if (INTEGRAL_OR_ENUMERATION_TYPE_P (type))
+  if (INTEGRAL_OR_ENUMERATION_TYPE_P (type)
+      || TREE_CODE (type) == REAL_TYPE)
     {
       if (cxx_dialect < cxx11)
 	{
@@ -7272,7 +7272,7 @@ convert_nontype_argument (tree type, tree expr, tsubst_flags_t complain)
 
       /* Notice that there are constant expressions like '4 % 0' which
 	 do not fold into integer constants.  */
-      if (TREE_CODE (expr) != INTEGER_CST && !val_dep_p)
+      if (!CONSTANT_CLASS_P (expr) && !val_dep_p)
 	{
 	  if (complain & tf_error)
 	    {
@@ -7287,7 +7287,7 @@ convert_nontype_argument (tree type, tree expr, tsubst_flags_t complain)
 		return NULL_TREE;
 	      /* else cxx_constant_value complained but gave us
 		 a real constant, so go ahead.  */
-	      if (TREE_CODE (expr) != INTEGER_CST)
+	      if (!CONSTANT_CLASS_P (expr))
 		{
 		  /* Some assemble time constant expressions like
 		     (intptr_t)&&lab1 - (intptr_t)&&lab2 or
@@ -7297,7 +7297,7 @@ convert_nontype_argument (tree type, tree expr, tsubst_flags_t complain)
 		     compile time.  Refuse them here.  */
 		  gcc_checking_assert (reduced_constant_expression_p (expr));
 		  error_at (loc, "template argument %qE for type %qT not "
-				 "a constant integer", expr, type);
+				 "a compile-time constant", expr, type);
 		  return NULL_TREE;
 		}
 	    }
@@ -13923,7 +13923,7 @@ tsubst_function_decl (tree t, tree args, tsubst_flags_t complain,
 	 If it isn't, that'll be handled by
 	 clone_constructors_and_destructors.  */
       if (PRIMARY_TEMPLATE_P (gen_tmpl))
-	clone_function_decl (r, /*update_methods=*/false);
+	clone_cdtor (r, /*update_methods=*/false);
     }
   else if ((complain & tf_error) != 0
 	   && IDENTIFIER_ANY_OP_P (DECL_NAME (r))
@@ -20769,7 +20769,7 @@ instantiate_template_1 (tree tmpl, tree orig_args, tsubst_flags_t complain)
      instantiating the template clones.  */
   if (tree chain = DECL_CHAIN (gen_tmpl))
     if (DECL_P (chain) && DECL_CLONED_FUNCTION_P (chain))
-      clone_function_decl (fndecl, /*update_methods=*/false);
+      clone_cdtor (fndecl, /*update_methods=*/false);
 
   if (!access_ok)
     {
@@ -26127,31 +26127,31 @@ invalid_nontype_parm_type_p (tree type, tsubst_flags_t complain)
   else if (cxx_dialect >= cxx11
 	   && TREE_CODE (type) == BOUND_TEMPLATE_TEMPLATE_PARM)
     return false;
-  else if (CLASS_TYPE_P (type))
+  else if (VOID_TYPE_P (type))
+    /* Fall through.  */;
+  else if (cxx_dialect >= cxx20)
     {
-      if (cxx_dialect < cxx20)
-	{
-	  if (complain & tf_error)
-	    error ("non-type template parameters of class type only available "
-		   "with %<-std=c++20%> or %<-std=gnu++20%>");
-	  return true;
-	}
       if (dependent_type_p (type))
 	return false;
-      if (!complete_type_or_else (type, NULL_TREE))
+      if (!complete_type_or_maybe_complain (type, NULL_TREE, complain))
 	return true;
-      if (!structural_type_p (type))
+      if (structural_type_p (type))
+	return false;
+      if (complain & tf_error)
 	{
-	  if (complain & tf_error)
-	    {
-	      auto_diagnostic_group d;
-	      error ("%qT is not a valid type for a template non-type "
-		     "parameter because it is not structural", type);
-	      structural_type_p (type, true);
-	    }
-	  return true;
+	  auto_diagnostic_group d;
+	  error ("%qT is not a valid type for a template non-type "
+		 "parameter because it is not structural", type);
+	  structural_type_p (type, true);
 	}
-      return false;
+      return true;
+    }
+  else if (CLASS_TYPE_P (type))
+    {
+      if (complain & tf_error)
+	error ("non-type template parameters of class type only available "
+	       "with %<-std=c++20%> or %<-std=gnu++20%>");
+      return true;
     }
 
   if (complain & tf_error)
@@ -28991,6 +28991,12 @@ do_auto_deduction (tree type, tree init, tree auto_node,
 	{
           if (complain & tf_error)
 	    error ("%qT as type rather than plain %<decltype(auto)%>", type);
+	  return error_mark_node;
+	}
+      else if (TYPE_QUALS (type) != TYPE_UNQUALIFIED)
+	{
+	  if (complain & tf_error)
+	    error ("%<decltype(auto)%> cannot be cv-qualified");
 	  return error_mark_node;
 	}
     }

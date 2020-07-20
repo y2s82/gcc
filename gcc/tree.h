@@ -925,7 +925,9 @@ extern void omp_clause_range_check_failed (const_tree, const char *, int,
 #define CALL_FROM_THUNK_P(NODE) (CALL_EXPR_CHECK (NODE)->base.protected_flag)
 
 /* In a CALL_EXPR, if the function being called is BUILT_IN_ALLOCA, means that
-   it has been built for the declaration of a variable-sized object.  */
+   it has been built for the declaration of a variable-sized object and, if the
+   function being called is BUILT_IN_MEMCPY, means that it has been built for
+   the assignment of a variable-sized object.  */
 #define CALL_ALLOCA_FOR_VAR_P(NODE) \
   (CALL_EXPR_CHECK (NODE)->base.protected_flag)
 
@@ -5239,8 +5241,8 @@ extern location_t *block_nonartificial_location (tree);
 extern location_t tree_nonartificial_location (tree);
 extern tree block_ultimate_origin (const_tree);
 extern tree get_binfo_at_offset (tree, poly_int64, tree);
-extern bool virtual_method_call_p (const_tree);
-extern tree obj_type_ref_class (const_tree ref);
+extern bool virtual_method_call_p (const_tree, bool = false);
+extern tree obj_type_ref_class (const_tree ref, bool = false);
 extern bool types_same_for_odr (const_tree type1, const_tree type2);
 extern bool contains_bitfld_component_ref_p (const_tree);
 extern bool block_may_fallthru (const_tree);

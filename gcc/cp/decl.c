@@ -942,8 +942,11 @@ function_requirements_equivalent_p (tree newfn, tree oldfn)
   tree reqs2 = get_trailing_function_requirements (oldfn);
   if ((reqs1 != NULL_TREE) != (reqs2 != NULL_TREE))
     return false;
+
+  /* Substitution is needed when friends are involved.  */
   reqs1 = maybe_substitute_reqs_for (reqs1, newfn);
   reqs2 = maybe_substitute_reqs_for (reqs2, oldfn);
+
   return cp_tree_equal (reqs1, reqs2);
 }
 
@@ -2527,7 +2530,7 @@ duplicate_decls (tree newdecl, tree olddecl, bool newdecl_is_friend)
 
       /* Merge parameter attributes. */
       tree oldarg, newarg;
-      for (oldarg = DECL_ARGUMENTS(olddecl),  newarg = DECL_ARGUMENTS(newdecl);
+      for (oldarg = DECL_ARGUMENTS(olddecl), newarg = DECL_ARGUMENTS(newdecl);
            oldarg && newarg;
            oldarg = DECL_CHAIN(oldarg), newarg = DECL_CHAIN(newarg))
 	{
@@ -2737,6 +2740,7 @@ duplicate_decls (tree newdecl, tree olddecl, bool newdecl_is_friend)
     TREE_USED (newdecl) = 1;
   else if (TREE_USED (newdecl))
     TREE_USED (olddecl) = 1;
+
   if (VAR_P (newdecl))
     {
       if (DECL_READ_P (olddecl))
@@ -2744,6 +2748,7 @@ duplicate_decls (tree newdecl, tree olddecl, bool newdecl_is_friend)
       else if (DECL_READ_P (newdecl))
 	DECL_READ_P (olddecl) = 1;
     }
+
   if (DECL_PRESERVE_P (olddecl))
     DECL_PRESERVE_P (newdecl) = 1;
   else if (DECL_PRESERVE_P (newdecl))
@@ -4683,9 +4688,9 @@ cp_make_fname_decl (location_t loc, tree id, int type_dep)
   return decl;
 }
 
-/* Install DECL as a builtin function at current (global) scope.
-   Return the new decl (if we found an existing version).  Also
-   installs it into ::std, if it's not '_*'.  */
+/* Install DECL as a builtin function at current global scope.  Return
+   the new decl (if we found an existing version).  Also installs it
+   into ::std, if it's not '_*'.  */
 
 tree
 cxx_builtin_function (tree decl)
@@ -4819,14 +4824,11 @@ build_cp_library_fn_ptr (const char* name, tree type, int ecf_flags)
 tree
 push_library_fn (tree name, tree type, tree raises, int ecf_flags)
 {
-  tree fn;
-
   if (raises)
     type = build_exception_variant (type, raises);
 
-  fn = build_library_fn (name, ERROR_MARK, type, ecf_flags);
-  pushdecl_top_level (fn);
-  return fn;
+  tree fn = build_library_fn (name, ERROR_MARK, type, ecf_flags);
+  return pushdecl_top_level (fn);
 }
 
 /* Like build_cp_library_fn, but also pushes the function so that it
@@ -9560,15 +9562,6 @@ grokfndecl (tree ctype,
 	  }
     }
 
-  /* FIXME: For now.  */
-  if (virtualp && (inlinep & 8) != 0)
-    {
-      sorry_at (DECL_SOURCE_LOCATION (decl),
-		"%<virtual%> %<consteval%> method %qD not supported yet",
-		decl);
-      inlinep &= ~8;
-    }
-
   /* If this decl has namespace scope, set that up.  */
   if (in_namespace)
     set_decl_namespace (decl, in_namespace, friendp);
@@ -12112,105 +12105,99 @@ grokdeclarator (const cp_declarator *declarator,
 
 	    /* Handle a late-specified return type.  */
 	    tree late_return_type = declarator->u.function.late_return_type;
-	    if (funcdecl_p
-		/* This is the case e.g. for
-		   using T = auto () -> int.  */
-		|| inner_declarator == NULL)
+	    if (tree auto_node = type_uses_auto (type))
 	      {
-		if (tree auto_node = type_uses_auto (type))
+		if (!late_return_type && funcdecl_p)
 		  {
-		    if (!late_return_type)
+		    if (current_class_type
+			&& LAMBDA_TYPE_P (current_class_type))
+		      /* OK for C++11 lambdas.  */;
+		    else if (cxx_dialect < cxx14)
 		      {
-			if (current_class_type
-			    && LAMBDA_TYPE_P (current_class_type))
-			  /* OK for C++11 lambdas.  */;
-			else if (cxx_dialect < cxx14)
-			  {
-			    error_at (typespec_loc, "%qs function uses "
-				      "%<auto%> type specifier without "
-				      "trailing return type", name);
-			    inform (typespec_loc,
-				    "deduced return type only available "
-				    "with %<-std=c++14%> or %<-std=gnu++14%>");
-			  }
-			else if (virtualp)
-			  {
-			    error_at (typespec_loc, "virtual function "
-				      "cannot have deduced return type");
-			    virtualp = false;
-			  }
+			error_at (typespec_loc, "%qs function uses "
+				  "%<auto%> type specifier without "
+				  "trailing return type", name);
+			inform (typespec_loc,
+				"deduced return type only available "
+				"with %<-std=c++14%> or %<-std=gnu++14%>");
 		      }
-		    else if (!is_auto (type) && sfk != sfk_conversion)
+		    else if (virtualp)
 		      {
-			error_at (typespec_loc, "%qs function with trailing "
-				  "return type has %qT as its type rather "
-				  "than plain %<auto%>", name, type);
-			return error_mark_node;
-		      }
-		    else if (is_auto (type) && AUTO_IS_DECLTYPE (type))
-		      {
-			if (funcdecl_p)
-			  error_at (typespec_loc,
-				    "%qs function with trailing return type "
-				    "has %<decltype(auto)%> as its type "
-				    "rather than plain %<auto%>", name);
-			else
-			  error_at (typespec_loc,
-				    "invalid use of %<decltype(auto)%>");
-			return error_mark_node;
-		      }
-		    tree tmpl = CLASS_PLACEHOLDER_TEMPLATE (auto_node);
-		    if (!tmpl)
-		      if (tree late_auto = type_uses_auto (late_return_type))
-			tmpl = CLASS_PLACEHOLDER_TEMPLATE (late_auto);
-		    if (tmpl && funcdecl_p)
-		      {
-			if (!dguide_name_p (unqualified_id))
-			  {
-			    error_at (declarator->id_loc, "deduced class "
-				      "type %qD in function return type",
-				      DECL_NAME (tmpl));
-			    inform (DECL_SOURCE_LOCATION (tmpl),
-				    "%qD declared here", tmpl);
-			    return error_mark_node;
-			  }
-			else if (!late_return_type)
-			  {
-			    error_at (declarator->id_loc, "deduction guide "
-				      "for %qT must have trailing return "
-				      "type", TREE_TYPE (tmpl));
-			    inform (DECL_SOURCE_LOCATION (tmpl),
-				    "%qD declared here", tmpl);
-			    return error_mark_node;
-			  }
-			else if (CLASS_TYPE_P (late_return_type)
-				 && CLASSTYPE_TEMPLATE_INFO (late_return_type)
-				 && (CLASSTYPE_TI_TEMPLATE (late_return_type)
-				     == tmpl))
-			  /* OK */;
-			else
-			  error ("trailing return type %qT of deduction guide "
-				 "is not a specialization of %qT",
-				 late_return_type, TREE_TYPE (tmpl));
+			error_at (typespec_loc, "virtual function "
+				  "cannot have deduced return type");
+			virtualp = false;
 		      }
 		  }
-		else if (late_return_type
-			 && sfk != sfk_conversion)
+		else if (!is_auto (type) && sfk != sfk_conversion)
 		  {
-		    if (late_return_type == error_mark_node)
-		      return error_mark_node;
-		    if (cxx_dialect < cxx11)
-		      /* Not using maybe_warn_cpp0x because this should
-			 always be an error.  */
-		      error_at (typespec_loc,
-				"trailing return type only available "
-				"with %<-std=c++11%> or %<-std=gnu++11%>");
-		    else
-		      error_at (typespec_loc, "%qs function with trailing "
-				"return type not declared with %<auto%> "
-				"type specifier", name);
+		    error_at (typespec_loc, "%qs function with trailing "
+			      "return type has %qT as its type rather "
+			      "than plain %<auto%>", name, type);
 		    return error_mark_node;
 		  }
+		else if (is_auto (type) && AUTO_IS_DECLTYPE (type))
+		  {
+		    if (funcdecl_p)
+		      error_at (typespec_loc,
+				"%qs function with trailing return type "
+				"has %<decltype(auto)%> as its type "
+				"rather than plain %<auto%>", name);
+		    else
+		      error_at (typespec_loc,
+				"invalid use of %<decltype(auto)%>");
+		    return error_mark_node;
+		  }
+		tree tmpl = CLASS_PLACEHOLDER_TEMPLATE (auto_node);
+		if (!tmpl)
+		  if (tree late_auto = type_uses_auto (late_return_type))
+		    tmpl = CLASS_PLACEHOLDER_TEMPLATE (late_auto);
+		if (tmpl && funcdecl_p)
+		  {
+		    if (!dguide_name_p (unqualified_id))
+		      {
+			error_at (declarator->id_loc, "deduced class "
+				  "type %qD in function return type",
+				  DECL_NAME (tmpl));
+			inform (DECL_SOURCE_LOCATION (tmpl),
+				"%qD declared here", tmpl);
+			return error_mark_node;
+		      }
+		    else if (!late_return_type)
+		      {
+			error_at (declarator->id_loc, "deduction guide "
+				  "for %qT must have trailing return "
+				  "type", TREE_TYPE (tmpl));
+			inform (DECL_SOURCE_LOCATION (tmpl),
+				"%qD declared here", tmpl);
+			return error_mark_node;
+		      }
+		    else if (CLASS_TYPE_P (late_return_type)
+			      && CLASSTYPE_TEMPLATE_INFO (late_return_type)
+			      && (CLASSTYPE_TI_TEMPLATE (late_return_type)
+				  == tmpl))
+		      /* OK */;
+		    else
+		      error ("trailing return type %qT of deduction guide "
+			      "is not a specialization of %qT",
+			      late_return_type, TREE_TYPE (tmpl));
+		  }
+	      }
+	    else if (late_return_type
+		     && sfk != sfk_conversion)
+	      {
+		if (late_return_type == error_mark_node)
+		  return error_mark_node;
+		if (cxx_dialect < cxx11)
+		  /* Not using maybe_warn_cpp0x because this should
+		     always be an error.  */
+		  error_at (typespec_loc,
+			    "trailing return type only available "
+			    "with %<-std=c++11%> or %<-std=gnu++11%>");
+		else
+		  error_at (typespec_loc, "%qs function with trailing "
+			    "return type not declared with %<auto%> "
+			    "type specifier", name);
+		return error_mark_node;
 	      }
 	    type = splice_late_return_type (type, late_return_type);
 	    if (type == error_mark_node)
@@ -12263,11 +12250,20 @@ grokdeclarator (const cp_declarator *declarator,
 	    /* Only plain decltype(auto) is allowed.  */
 	    if (tree a = type_uses_auto (type))
 	      {
-		if (AUTO_IS_DECLTYPE (a) && a != type)
+		if (AUTO_IS_DECLTYPE (a))
 		  {
-		    error_at (typespec_loc, "%qT as type rather than "
-			      "plain %<decltype(auto)%>", type);
-		    return error_mark_node;
+		    if (a != type)
+		      {
+			error_at (typespec_loc, "%qT as type rather than "
+				  "plain %<decltype(auto)%>", type);
+			return error_mark_node;
+		      }
+		    else if (TYPE_QUALS (type) != TYPE_UNQUALIFIED)
+		      {
+			error_at (typespec_loc, "%<decltype(auto)%> cannot be "
+				  "cv-qualified");
+			return error_mark_node;
+		      }
 		  }
 	      }
 
@@ -13435,6 +13431,7 @@ grokdeclarator (const cp_declarator *declarator,
 		     in-class defaulted functions, but that breaks grokfndecl.
 		     So set it here.  */
 		  funcdef_flag = true;
+
 		if (template_class_depth (current_class_type) == 0)
 		  {
 		    decl = check_explicit_specialization

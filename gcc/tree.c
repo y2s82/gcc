@@ -1771,6 +1771,8 @@ cache_integer_cst (tree t)
       break;
 
     case ENUMERAL_TYPE:
+      /* The slot used by TYPE_CACHED_VALUES is used for the enum
+	 members.  */
       break;
 
     default:
@@ -12810,10 +12812,11 @@ lhd_gcc_personality (void)
    OBJ_TYPE_REF representing an virtual call of C++ method.
    (As opposed to OBJ_TYPE_REF representing objc calls
    through a cast where middle-end devirtualization machinery
-   can't apply.) */
+   can't apply.)  FOR_DUMP_P is true when being called from
+   the dump routines.  */
 
 bool
-virtual_method_call_p (const_tree target)
+virtual_method_call_p (const_tree target, bool for_dump_p)
 {
   if (TREE_CODE (target) != OBJ_TYPE_REF)
     return false;
@@ -12826,7 +12829,7 @@ virtual_method_call_p (const_tree target)
   /* If we do not have BINFO associated, it means that type was built
      without devirtualization enabled.  Do not consider this a virtual
      call.  */
-  if (!TYPE_BINFO (obj_type_ref_class (target)))
+  if (!TYPE_BINFO (obj_type_ref_class (target, for_dump_p)))
     return false;
   return true;
 }
@@ -13253,7 +13256,9 @@ get_tree_code_name (enum tree_code code)
 {
   const char *invalid = "<invalid tree code>";
 
-  if (code >= MAX_TREE_CODES)
+  /* The tree_code enum promotes to signed, but we could be getting
+     invalid values, so force an unsigned comparison.  */
+  if (unsigned (code) >= MAX_TREE_CODES)
     {
       if (code == 0xa5a5)
 	return "ggc_freed";
