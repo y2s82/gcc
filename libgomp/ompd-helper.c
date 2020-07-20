@@ -29,16 +29,42 @@
 #include <string.h>
 
 ompd_rc_t
-gompd_getQueryString (char **buf, const char* type, const char* variable,
-                      const char *member)
+gompd_getQueryType (const char **typeString, query_type type)
+{
+  switch (type)
+  {
+    case query_address:
+      {
+	const char *p = "address";
+	typeString = &p;
+      }
+      break;
+    case query_size:
+      {
+	const char *p = "size";
+	typeString = &p;
+      }
+      break;
+    default:
+      return ompd_rc_bad_input;
+  }
+  return ompd_rc_ok;
+}
+ompd_rc_t
+gompd_getQueryString (char **buf, query_type type, const char* variable,
+		      const char *member)
 {
   if (!type || !variable)
     return ompd_rc_bad_input;
 
   const char *prefix = "gompd";
   const char *sep = "_";
-  ompd_size_t querySize = strlen(prefix) + strlen(sep) + strlen(type)
-                          + strlen(sep) + strlen(variable);
+  const char **typeString;
+
+  gompd_getQueryType (typeString, type);
+
+  ompd_size_t querySize = strlen(prefix) + strlen(sep) + strlen(*typeString)
+			  + strlen(sep) + strlen(variable);
   if (member)
     querySize += strlen(sep) + strlen(member);
 
@@ -51,8 +77,8 @@ gompd_getQueryString (char **buf, const char* type, const char* variable,
   offset += strlen (prefix);
   strcpy (*buf + offset, sep);
   offset += strlen (sep);
-  strcpy (*buf + offset, type);
-  offset += strlen (type);
+  strcpy (*buf + offset, *typeString);
+  offset += strlen (*typeString);
   strcpy (*buf + offset, sep);
   offset += strlen (sep);
   strcpy (*buf + offset, variable);
@@ -69,8 +95,8 @@ gompd_getQueryString (char **buf, const char* type, const char* variable,
 
 ompd_rc_t
 gompd_getVariableAddress (ompd_address_space_context_t *ah,
-                          ompd_thread_context_t *th, ompd_address_t *addr,
-                          const char *variable, ompd_addr_t seg)
+			  ompd_thread_context_t *th, ompd_address_t *addr,
+			  const char *variable, ompd_addr_t seg)
 {
 
   ompd_rc_t ret = ompd_rc_ok;
@@ -89,24 +115,24 @@ gompd_getVariableAddress (ompd_address_space_context_t *ah,
 
 ompd_rc_t
 gompd_getVariableValue (ompd_address_space_context_t *ah,
-                        ompd_thread_context_t *th, void *buf, ompd_address_t *addr,
-                        const char *variable, ompd_addr_t seg)
+			ompd_thread_context_t *th, void *buf, ompd_address_t *addr,
+			const char *variable, ompd_addr_t seg)
 {
   return ompd_rc_ok;
 }
 
 ompd_rc_t
 gompd_getMemberOffset (ompd_address_space_context_t *ah,
-                       ompd_thread_context_t *th, ompd_address_t *variableAddr,
-                       const char *variable, const char *member, ompd_addr_t seg)
+		       ompd_thread_context_t *th, ompd_address_t *variableAddr,
+		       const char *variable, const char *member, ompd_addr_t seg)
 {
   return ompd_rc_ok;
 }
 
 ompd_rc_t
 gompd_getMemberValue (ompd_address_space_context_t *ah,
-                      ompd_thread_context_t *th, void *buf,ompd_address_t *addr,
-                      const char *variable, const char *member, ompd_addr_t seg)
+		      ompd_thread_context_t *th, void *buf,ompd_address_t *addr,
+		      const char *variable, const char *member, ompd_addr_t seg)
 {
   return ompd_rc_ok;
 }

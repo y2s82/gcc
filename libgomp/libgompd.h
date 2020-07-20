@@ -47,22 +47,29 @@ typedef struct _ompd_aspace_handle {
   ompd_size_t ref_count;
 } ompd_address_space_handle_t;
 
+typedef enum gompd_query_type {
+  query_address,
+  query_size
+} query_type;
+
+ompd_rc_t gompd_getQueryType (const char **, query_type);
+
 ompd_rc_t gompd_getQuery (char **, const char*, const char*, const char *);
 
 ompd_rc_t gompd_getVariableAddress (ompd_address_space_context_t *,
-                                    ompd_thread_context_t *, ompd_address_t *,
-                                    const char *, ompd_addr_t);
+				    ompd_thread_context_t *, ompd_address_t *,
+				    const char *, ompd_addr_t);
 
 ompd_rc_t gompd_getVariableValue (ompd_address_space_context_t *,
-                                    ompd_thread_context_t *, void *, ompd_address_t *,
-                                    const char *, ompd_addr_t);
+				  ompd_thread_context_t *, void *, ompd_address_t *,
+				  const char *, ompd_addr_t);
 
 ompd_rc_t gompd_getMemberOffset (ompd_address_space_context_t *,
-                                    ompd_thread_context_t *, ompd_address_t *,
-                                    const char *, const char *, ompd_addr_t);
+				 ompd_thread_context_t *, ompd_address_t *,
+				 const char *, const char *, ompd_addr_t);
 
 ompd_rc_t gompd_getMemberValue (ompd_address_space_context_t *,
-                                    ompd_thread_context_t *, void *, ompd_address_t *,
-                                    const char *, const char *, ompd_addr_t);
+				ompd_thread_context_t *, void *, ompd_address_t *,
+				const char *, const char *, ompd_addr_t);
 
 #endif /* LIBGOMPD_H */
