@@ -11,7 +11,7 @@
 
    Libgomp is distributed in the hope that it will be useful, but WITHOUT ANY
    WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
-   FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+   FOR A PARTICULAR PURoffsetE.  See the GNU General Public License for
    more details.
 
    Under Section 7 of GPL version 3, you are granted additional
@@ -26,10 +26,44 @@
 /* This file defines custom helper functions for OMPD functions.  */
    
 #include "libgompd.h"
+#include <string.h>
 
 ompd_rc_t
-gompd_getQuery (const char* type, const char* variable, const char *member)
+gompd_getQueryString (char **buf, const char* type, const char* variable,
+                      const char *member)
 {
+  if (!type || !variable)
+    return ompd_rc_bad_input;
+
+  const char *prefix = "gompd";
+  const char *sep = "_";
+  ompd_size_t querySize = strlen(prefix) + strlen(sep) + strlen(type)
+                          + strlen(sep) + strlen(variable);
+  if (member)
+    querySize += strlen(sep) + strlen(member);
+
+  ompd_rc_t ret = gompd_callbacks.alloc_memory (querySize + 1, (void *) *buf);
+  if (ret != ompd_rc_ok)
+    return ret;
+
+  size_t offset = 0;
+  strcpy (*buf, prefix);
+  offset += strlen (prefix);
+  strcpy (*buf + offset, sep);
+  offset += strlen (sep);
+  strcpy (*buf + offset, type);
+  offset += strlen (type);
+  strcpy (*buf + offset, sep);
+  offset += strlen (sep);
+  strcpy (*buf + offset, variable);
+  if (member)
+    {
+      offset += strlen (variable);
+      strcpy (*buf + offset, sep);
+      offset += strlen (sep);
+      strcpy (*buf + offset, member);
+    }
+
   return ompd_rc_ok;
 }
 
@@ -38,7 +72,19 @@ gompd_getVariableAddress (ompd_address_space_context_t *ah,
                           ompd_thread_context_t *th, ompd_address_t *addr,
                           const char *variable, ompd_addr_t seg)
 {
-  return ompd_rc_ok;
+
+  ompd_rc_t ret = ompd_rc_ok;
+  char *queryString = NULL;
+  ret = gompd_getQueryString (&queryString, "address", variable, NULL);
+  if (ret != ompd_rc_ok)
+    return ret;
+
+  ret = gompd_callbacks.symbol_addr_lookup (ah, th, queryString, addr, NULL);
+  if (ret != ompd_rc_ok)
+    return ret;
+
+  ret = gompd_callbacks.free_memory (queryString);
+  return ret;
 }
 
 ompd_rc_t
