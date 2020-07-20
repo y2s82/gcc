@@ -54,13 +54,13 @@ typedef struct _ompd_aspace_handle {
 } ompd_address_space_handle_t;
 
 typedef enum gompd_query_type {
-#define GENERATE_ENUM(ENUM) ENUM
+#define GENERATE_ENUM(ENUM) ENUM,
   FOREACH_QUERYTYPE (GENERATE_ENUM)
 #undef GENERATE_ENUM
 } query_type;
 
 static const char *gompd_query_type_string[] = {
-#define GENERATE_STRING(STRING) ompd_stringify (STRING)
+#define GENERATE_STRING(STRING) ompd_stringify (STRING),
   FOREACH_QUERYTYPE (GENERATE_STRING)
 #undef GENERATE_STRING
 };
