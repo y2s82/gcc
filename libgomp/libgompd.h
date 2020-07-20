@@ -30,13 +30,12 @@
 #define LIBGOMPD_H 1
 
 #include "omp-tools.h"
+#include <string.h>
 
 #define ompd_stringify(x) ompd_str2(x)
 #define ompd_str2(x) #x
 
 #define OMPD_VERSION 201811
-
-#define QUERY_PREFIX gompd
 
 #define FOREACH_QUERYTYPE(TYPE)\
 	TYPE (gompd_query_address)\
@@ -66,6 +65,8 @@ static const char *gompd_query_type_string[] = {
 #undef GENERATE_STRING
 };
 
+ompd_rc_t gompd_getQueryStringSize (size_t *, query_type, const char*, const char *);
+
 ompd_rc_t gompd_getQueryString (char **, query_type, const char*, const char *);
 
 ompd_rc_t gompd_getAddress (ompd_address_space_context_t *, ompd_thread_context_t *,
@@ -75,8 +76,7 @@ ompd_rc_t gompd_getSize (ompd_address_space_context_t *, ompd_thread_context_t *
 			 ompd_size_t *, const char *, const char *);
 
 ompd_rc_t gompd_getValue (ompd_address_space_context_t *, ompd_thread_context_t *,
-			  void *, ompd_address_t *, const char *, const char *, 
-		  	  ompd_addr_t);
+			  void *, ompd_address_t *, const char *, const char *);
 
 ompd_rc_t gompd_getVariableAddress (ompd_address_space_context_t *,
 				    ompd_thread_context_t *, ompd_address_t *,
@@ -85,19 +85,17 @@ ompd_rc_t gompd_getVariableAddress (ompd_address_space_context_t *,
 ompd_rc_t gompd_getVariableSize (ompd_address_space_context_t *,
 				 ompd_thread_context_t *, ompd_size_t *, const char *);
 
-ompd_rc_t gompd_getVariableValue (ompd_address_space_context_t *,
-				  ompd_thread_context_t *, void *, ompd_address_t *,
-				  const char *, ompd_addr_t);
+ompd_rc_t gompd_getVariableValue (ompd_address_space_context_t *, ompd_thread_context_t *,
+                                  void *, ompd_address_t *, const char *);
 
 ompd_rc_t gompd_getMemberAddress (ompd_address_space_context_t *,
 				  ompd_thread_context_t *, ompd_address_t *,
 				  const char *, const char *, ompd_addr_t);
 
 ompd_rc_t gompd_getMemberSize (ompd_address_space_context_t *, ompd_thread_context_t *,
-			       ompd_address_t *, const char *, const char *, ompd_addr_t);
+			       ompd_size_t *, const char *, const char *);
 
 ompd_rc_t gompd_getMemberValue (ompd_address_space_context_t *, ompd_thread_context_t *,
-				void *, ompd_address_t *, const char *, const char *,
-				ompd_addr_t);
+				void *, ompd_address_t *, const char *, const char *);
 
 #endif /* LIBGOMPD_H */
