@@ -33,7 +33,12 @@ ompd_rc_t
 ompd_get_omp_version (ompd_address_space_handle_t *ah,
 			       ompd_word_t *omp_version)
 {
-  return ompd_rc_ok;
+  ompd_rc_t ret;
+  ompd_address_t verAddr;
+  ret = gompd_getVariableAddress (ah->context, NULL, &verAddr, "ompd_version", verAddr.segment);
+
+  ret = gompd_getVariableValue (ah->context, NULL, (void *)omp_version, &verAddr, "ompd_version");
+  return ret;
 }
 
 ompd_rc_t
