@@ -74,11 +74,11 @@ gompd_getQueryString (char **queryString, query_type type,
 }
 
 ompd_rc_t
-gompd_getAddress (ompd_address_space_context_t *ah, ompd_thread_context_t *th,
+gompd_getAddress (ompd_address_space_context_t *ac, ompd_thread_context_t *tc,
 		  ompd_address_t *addr, const char *variableType,
 		  const char *memberType, ompd_addr_t seg)
 {
-  if (!ah || !th)
+  if (!ac)
     return ompd_rc_stale_handle;
   ompd_rc_t ret = ompd_rc_ok;
   char *queryString = NULL;
@@ -97,7 +97,7 @@ gompd_getAddress (ompd_address_space_context_t *ah, ompd_thread_context_t *th,
 
   if (!memberType)
     {
-      ret = gompd_callbacks.symbol_addr_lookup (ah, th, queryString, addr,
+      ret = gompd_callbacks.symbol_addr_lookup (ac, tc, queryString, addr,
 						NULL);
       if (ret != ompd_rc_ok)
 	return ret;
@@ -106,11 +106,11 @@ gompd_getAddress (ompd_address_space_context_t *ah, ompd_thread_context_t *th,
     {
       ompd_size_t offset;
       ompd_address_t offsetAddr;
-      ret = gompd_callbacks.symbol_addr_lookup (ah, th, queryString,
+      ret = gompd_callbacks.symbol_addr_lookup (ac, tc, queryString,
 						&offsetAddr, NULL);
       if (ret != ompd_rc_ok)
 	return ret;
-      ret = gompd_callbacks.read_memory (ah, th, &offsetAddr,
+      ret = gompd_callbacks.read_memory (ac, tc, &offsetAddr,
 					 sizeof (ompd_size_t),
 					 (void *) &offset);
       if (ret != ompd_rc_ok)
@@ -127,11 +127,11 @@ gompd_getAddress (ompd_address_space_context_t *ah, ompd_thread_context_t *th,
 }
 
 ompd_rc_t
-gompd_getSize (ompd_address_space_context_t *ah, ompd_thread_context_t *th,
+gompd_getSize (ompd_address_space_context_t *ac, ompd_thread_context_t *tc,
 	       ompd_size_t *size, const char *variableType,
 	       const char *memberType)
 {
-  if (!ah || !th)
+  if (!ac)
     return ompd_rc_stale_handle;
   ompd_rc_t ret;
   ompd_address_t sizeAddr;
@@ -142,22 +142,22 @@ gompd_getSize (ompd_address_space_context_t *ah, ompd_thread_context_t *th,
   if (ret != ompd_rc_ok)
     return ret;
 
-  ret = gompd_callbacks.symbol_addr_lookup (ah, th, queryString, &sizeAddr,
+  ret = gompd_callbacks.symbol_addr_lookup (ac, tc, queryString, &sizeAddr,
 					    NULL);
   if (ret != ompd_rc_ok)
     return ret;
 
-  ret = gompd_callbacks.read_memory (ah, th, &sizeAddr, sizeof (ompd_size_t),
+  ret = gompd_callbacks.read_memory (ac, tc, &sizeAddr, sizeof (ompd_size_t),
 				     (void *) size);
   return ret;
 }
 
-ompd_rc_t gompd_getValue (ompd_address_space_context_t *ah,
-			  ompd_thread_context_t *th, void *value,
+ompd_rc_t gompd_getValue (ompd_address_space_context_t *ac,
+			  ompd_thread_context_t *tc, void *value,
 			  ompd_address_t *addr, const char *variableType,
 			  const char *memberType)
 {
-  if (!ah || !th)
+  if (!ac)
     return ompd_rc_stale_handle;
   if (!addr)
     return ompd_rc_bad_input;
@@ -165,64 +165,64 @@ ompd_rc_t gompd_getValue (ompd_address_space_context_t *ah,
   ompd_rc_t ret;
   ompd_size_t size;
 
-  ret = gompd_getSize (ah, th, &size, variableType, memberType);
+  ret = gompd_getSize (ac, tc, &size, variableType, memberType);
   if (ret != ompd_rc_ok)
     return ret;
 
-  ret = gompd_callbacks.read_memory (ah, th, addr, size, value);
+  ret = gompd_callbacks.read_memory (ac, tc, addr, size, value);
 
   return ompd_rc_ok;
 }
 
 ompd_rc_t
-gompd_getVariableAddress (ompd_address_space_context_t *ah,
-			  ompd_thread_context_t *th, ompd_address_t *addr,
+gompd_getVariableAddress (ompd_address_space_context_t *ac,
+			  ompd_thread_context_t *tc, ompd_address_t *addr,
 			  const char *variableType, ompd_addr_t seg)
 {
-  return gompd_getAddress (ah, th, addr, variableType, NULL, seg);
+  return gompd_getAddress (ac, tc, addr, variableType, NULL, seg);
 }
 
 ompd_rc_t
-gompd_getVariableSize (ompd_address_space_context_t *ah,
-		       ompd_thread_context_t * th, ompd_size_t *size,
+gompd_getVariableSize (ompd_address_space_context_t *ac,
+		       ompd_thread_context_t * tc, ompd_size_t *size,
 		       const char *variableType)
 {
-  return gompd_getSize (ah, th, size, variableType, NULL);
+  return gompd_getSize (ac, tc, size, variableType, NULL);
 }
 
 ompd_rc_t
-gompd_getVariableValue (ompd_address_space_context_t *ah,
-			ompd_thread_context_t *th, void *value,
+gompd_getVariableValue (ompd_address_space_context_t *ac,
+			ompd_thread_context_t *tc, void *value,
 			ompd_address_t *variableAddress,
 			const char *variableType)
 {
-  return gompd_getValue (ah, th, value, variableAddress, variableType, NULL);
+  return gompd_getValue (ac, tc, value, variableAddress, variableType, NULL);
 }
 
 ompd_rc_t
-gompd_getMemberAddress (ompd_address_space_context_t *ah,
-			ompd_thread_context_t *th, ompd_address_t *variableAddr,
+gompd_getMemberAddress (ompd_address_space_context_t *ac,
+			ompd_thread_context_t *tc, ompd_address_t *variableAddr,
 			const char *variableType, const char *memberType,
 			ompd_addr_t seg)
 {
   if (!variableAddr)
     return ompd_rc_bad_input;
-  return gompd_getAddress (ah, th, variableAddr, variableType, memberType, seg);
+  return gompd_getAddress (ac, tc, variableAddr, variableType, memberType, seg);
 }
 
 ompd_rc_t
-gompd_getMemberSize (ompd_address_space_context_t *ah,
-		     ompd_thread_context_t *th, ompd_size_t *size,
+gompd_getMemberSize (ompd_address_space_context_t *ac,
+		     ompd_thread_context_t *tc, ompd_size_t *size,
 		     const char *variableType, const char *memberType)
 {
-  return gompd_getSize (ah, th, size, variableType, memberType);
+  return gompd_getSize (ac, tc, size, variableType, memberType);
 }
 
 ompd_rc_t
-gompd_getMemberValue (ompd_address_space_context_t *ah,
-		      ompd_thread_context_t *th, void *value,
+gompd_getMemberValue (ompd_address_space_context_t *ac,
+		      ompd_thread_context_t *tc, void *value,
 		      ompd_address_t *addr, const char *variableType,
 		      const char *memberType)
 {
-  return gompd_getValue (ah, th, value, addr, variableType, memberType);
+  return gompd_getValue (ac, tc, value, addr, variableType, memberType);
 }
