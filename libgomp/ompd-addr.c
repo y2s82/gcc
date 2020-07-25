@@ -28,6 +28,7 @@
 
 #include "omp-tools.h"
 #include "libgompd.h"
+#include <stdio.h>
 
 ompd_rc_t
 ompd_get_omp_version (ompd_address_space_handle_t *ah,
@@ -44,6 +45,33 @@ ompd_get_omp_version (ompd_address_space_handle_t *ah,
 ompd_rc_t
 ompd_get_omp_version_string (ompd_address_space_handle_t *ah,
 			    const char **string)
-{
-  return ompd_rc_ok;
+{  
+  if (string == NULL)
+    return ompd_rc_bad_input;
+
+  if (ah == NULL)
+    return ompd_rc_stale_handle;
+
+  ompd_size_t macro_length = 6; /* _OPENMP format: yyyymm.  */
+  ompd_word_t omp_version;
+  ompd_rc_t ret = ompd_get_omp_version (ah, &omp_version);
+  if (ret != ompd_rc_ok)
+    return ret;
+
+  char *tmp = "GNU OpenMP Runtime implementing OpenMP 5.0 ";
+  ompd_size_t tmp_length = strlen (tmp);
+
+  size_t total_length = tmp_length + macro_length + 1;
+
+  char *t = NULL;
+  ret = gompd_callbacks.alloc_memory (total_length, (void *) t);
+  if (ret != ompd_rc_ok)
+    return ret;
+
+  memcpy (t, tmp, tmp_length);
+  snprintf (t + tmp_length, macro_length, "%ld", omp_version);
+
+  *string = t;
+
+  return ret;
 }
