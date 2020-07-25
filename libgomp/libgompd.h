@@ -73,8 +73,8 @@ ompd_rc_t gompd_getSize (ompd_address_space_context_t *,
 			 const char *);
 
 ompd_rc_t gompd_getValue (ompd_address_space_context_t *,
-			  ompd_thread_context_t *,
-			  void *, ompd_address_t *, const char *, const char *);
+			  ompd_thread_context_t *, void *, ompd_address_t *,
+			  const char *, const char *);
 
 ompd_rc_t gompd_getVariableAddress (ompd_address_space_context_t *,
 				    ompd_thread_context_t *, ompd_address_t *,

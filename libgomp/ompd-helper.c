@@ -122,8 +122,7 @@ gompd_getAddress (ompd_address_space_context_t *ac, ompd_thread_context_t *tc,
       return ompd_rc_bad_input;
     }
 
-  ret = gompd_callbacks.free_memory (queryString);
-  return ret;
+  return gompd_callbacks.free_memory (queryString);
 }
 
 ompd_rc_t
@@ -147,15 +146,14 @@ gompd_getSize (ompd_address_space_context_t *ac, ompd_thread_context_t *tc,
   if (ret != ompd_rc_ok)
     return ret;
 
-  ret = gompd_callbacks.read_memory (ac, tc, &sizeAddr, sizeof (ompd_size_t),
+  return gompd_callbacks.read_memory (ac, tc, &sizeAddr, sizeof (ompd_size_t),
 				     (void *) size);
-  return ret;
 }
 
 ompd_rc_t gompd_getValue (ompd_address_space_context_t *ac,
 			  ompd_thread_context_t *tc, void *value,
-			  ompd_address_t *addr, const char *variableType,
-			  const char *memberType)
+			  ompd_address_t *addr,
+			  const char *variableType, const char *memberType)
 {
   if (!ac)
     return ompd_rc_stale_handle;
@@ -164,14 +162,10 @@ ompd_rc_t gompd_getValue (ompd_address_space_context_t *ac,
 
   ompd_rc_t ret;
   ompd_size_t size;
-
   ret = gompd_getSize (ac, tc, &size, variableType, memberType);
   if (ret != ompd_rc_ok)
     return ret;
-
-  ret = gompd_callbacks.read_memory (ac, tc, addr, size, value);
-
-  return ompd_rc_ok;
+  return gompd_callbacks.read_memory (ac, tc, addr, size, value);
 }
 
 ompd_rc_t
